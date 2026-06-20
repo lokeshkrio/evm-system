@@ -1,19 +1,20 @@
 import asyncio
 import sys
+import json
+from pathlib import Path
 import questionary
 from prompt_toolkit.styles import Style
 from clients.terminal.terminal_client import TerminalClient
 
-# Custom color theme matching modern JS frameworks (Vite/NextJS style)
 custom_style = Style(
     [
-        ("qmark", "fg:#61afef bold"),  # Question mark icon color
-        ("question", "bold fg:#ffffff"),  # The question text
-        ("answer", "fg:#98c379 bold"),  # Submitted answer text
-        ("pointer", "fg:#e5c07b bold"),  # Arrow pointer (>)
-        ("highlighted", "fg:#61afef bold"),  # Currently hovered option
-        ("selected", "fg:#98c379"),  # Selected item
-        ("instruction", "fg:#5c6370 italic"),  # Help text (like "Use arrow keys")
+        ("qmark", "fg:#61afef bold"),
+        ("question", "bold fg:#ffffff"),
+        ("answer", "fg:#98c379 bold"),
+        ("pointer", "fg:#e5c07b bold"),
+        ("highlighted", "fg:#61afef bold"),
+        ("selected", "fg:#98c379"),
+        ("instruction", "fg:#5c6370 italic"),
     ]
 )
 
@@ -23,7 +24,14 @@ async def main():
     print(" 🗳️  EVM VOTING TERMINAL INTUITIVE INTERFACE ")
     print("=" * 45 + "\n")
 
-    # Interactive prompt for Terminal ID
+    api_key = await questionary.password(
+        "Enter Terminal Authentication Token:", style=custom_style
+    ).ask_async()
+
+    if not api_key:
+        print("❌ Error: Authentication Token cannot be empty.")
+        sys.exit(1)
+
     terminal_id = await questionary.text(
         "Enter unique Terminal ID (e.g., Terminal_01):", style=custom_style
     ).ask_async()
@@ -32,7 +40,7 @@ async def main():
         print("❌ Error: Terminal ID cannot be empty.")
         sys.exit(1)
 
-    client = TerminalClient(terminal_id=terminal_id.strip())
+    client = TerminalClient(terminal_id=terminal_id.strip(), api_key=api_key)
 
     try:
         print(f"📡 Connecting to EVM Core Server as '{terminal_id}'...")
@@ -41,9 +49,23 @@ async def main():
     except Exception as e:
         print(f"❌ Connection Failed: Server is unreachable. Details: {e}")
         return
+        
+    # Load candidates locally from JSON
+    candidates_path = Path("data/candidates.json")
+    if not candidates_path.exists():
+        print(f"❌ Error: Could not find candidates file at {candidates_path}")
+        return
+        
+    try:
+        with open(candidates_path, "r", encoding="utf-8") as f:
+            candidates = json.load(f)
+    except Exception as e:
+        print(f"❌ Error reading candidates: {e}")
+        return
+
+    candidate_choices = [f"{c['id']} - {c['name']} ({c['party']})" for c in candidates]
 
     while True:
-        # Beautiful Select menu with arrow-key navigation and Enter execution
         choice = await questionary.select(
             f"Active Session [{terminal_id}] — Choose a terminal action:",
             choices=[
@@ -55,6 +77,9 @@ async def main():
             pointer="➔",
         ).ask_async()
 
+        if choice is None:
+            break
+
         try:
             if "Cast a Ballot" in choice:
                 voter_id = await questionary.text(
@@ -65,14 +90,16 @@ async def main():
                     print("⚠️  Error: Voter ID cannot be blank.")
                     continue
 
-                candidate_raw = await questionary.text(
-                    "Enter Candidate ID (integer):",
-                    style=custom_style,
-                    validate=lambda text: text.isdigit()
-                    or "Candidate ID must be a number!",
+                candidate_selection = await questionary.select(
+                    "Select a Candidate:",
+                    choices=candidate_choices,
+                    style=custom_style
                 ).ask_async()
-
-                candidate_id = int(candidate_raw)
+                
+                if candidate_selection is None:
+                    continue
+                    
+                candidate_id = int(candidate_selection.split(" - ")[0])
 
                 print("\n🔐 Submitting secure ballot transaction...")
                 response = await client.cast_vote(voter_id.strip(), candidate_id)

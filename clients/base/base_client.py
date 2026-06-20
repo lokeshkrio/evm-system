@@ -8,8 +8,9 @@ logger = logging.getLogger(__name__)
 
 
 class BaseClient:
-    def __init__(self, uri: str):
+    def __init__(self, uri: str, api_key: str | None = None):
         self.uri = uri
+        self.api_key = api_key
         self.websocket = None
         self._request_id = str(uuid.uuid4())
         self._pending_requests: dict[str, asyncio.Future] = {}
@@ -53,6 +54,7 @@ class BaseClient:
             "method": method,
             "params": params if params is not None else {},
             "id": request_id,
+            "api_key": self.api_key,
         }
 
         # Create a Future object to hold the response when it arrives
@@ -99,6 +101,7 @@ class BaseClient:
             "method": method,
             "params": params,
             "id": request_id,
+            "api_key": self.api_key,
         }
 
         future = asyncio.get_running_loop().create_future()

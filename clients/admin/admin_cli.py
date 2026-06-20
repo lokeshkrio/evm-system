@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import questionary
+import sys
 from clients.admin.admin_client import AdminClient
 
 # Setup basic logging config
@@ -10,8 +11,31 @@ logging.basicConfig(
 
 
 async def main():
-    print("=== EVM System Administration Console ===")
-    client = AdminClient()
+    # Style customizations for a modern look
+    custom_style = questionary.Style(
+        [
+            ("qmark", "fg:#ff5555 bold"),
+            ("question", "bold fg:#ffffff"),
+            ("answer", "fg:#50fa7b bold"),
+            ("pointer", "fg:#f1fa8c bold"),
+            ("highlighted", "fg:#282a36 bg:#f1fa8c bold"),
+            ("selected", "fg:#50fa7b"),
+        ]
+    )
+
+    print("\n" + "=" * 50)
+    print("          ROOT SECURITY ADMINISTRATION")
+    print("=" * 50 + "\n")
+
+    api_key = await questionary.password(
+        "Enter Admin Authentication Token:", style=custom_style
+    ).ask_async()
+
+    if not api_key:
+        print("Operation aborted.")
+        sys.exit(1)
+
+    client = AdminClient(api_key=api_key)
 
     try:
         print("Connecting to secure central backend cluster...")
@@ -21,37 +45,25 @@ async def main():
         print(f"Deployment Error: Configuration target unreachable. Details: {e}")
         return
 
-    # Style customizations for a modern look
-    custom_style = questionary.Style(
-        [
-            ("qmark", "fg:#ff5555 bold"),  # Question mark indicator
-            ("question", "bold fg:#ffffff"),  # The question text
-            ("answer", "fg:#50fa7b bold"),  # Selected items or answers
-            ("pointer", "fg:#f1fa8c bold"),  # Arrow pointers
-            ("highlighted", "fg:#282a36 bg:#f1fa8c bold"),  # Hovered element
-            ("selected", "fg:#50fa7b"),  # Selected status
-        ]
-    )
-
     while True:
-        print("\n" + "=" * 50)
-        print("          ROOT SECURITY ADMINISTRATION")
-        print("=" * 50)
-
-        # Using questionary's async select option to build an interactive menu
+        print("\n" + "-" * 50)
+        
         choice = await questionary.select(
             "Execute Directive:",
             choices=[
                 "1. Initialize & Start Election Cycle",
-                "2. Halt & Close Active Election",
-                "3. Query Cryptographic Tally Results",
-                "4. Check Engine Core State",
-                "5. Terminate Admin Session",
+                "2. Allow Single Terminal to Cast Vote",
+                "3. Halt Active Election (Pause)",
+                "4. Resume Halted Election",
+                "5. Stop & Close Active Election",
+                "6. Check System Metrics & Terminals",
+                "7. Query Cryptographic Tally Results",
+                "8. Check Engine Core State",
+                "9. Terminate Admin Session",
             ],
             style=custom_style,
         ).ask_async()
 
-        # If a keyboard interrupt or escape happens inside selection, choice becomes None
         if choice is None:
             break
 
@@ -62,9 +74,23 @@ async def main():
                 print(f"Execution Receipt:\n{response}")
 
             elif "2." in choice:
-                # Use interactive confirmation questionnaire
+                print("\nDispatching 'enable_vote' signal for next terminal...")
+                response = await client.enable_vote()
+                print(f"Execution Receipt:\n{response}")
+
+            elif "3." in choice:
+                print("\nDispatching 'halt_election' signal...")
+                response = await client.halt_election()
+                print(f"Execution Receipt:\n{response}")
+
+            elif "4." in choice:
+                print("\nDispatching 'resume_election' signal...")
+                response = await client.resume_election()
+                print(f"Execution Receipt:\n{response}")
+
+            elif "5." in choice:
                 confirm = await questionary.confirm(
-                    "CRITICAL: Halt election permanently?",
+                    "CRITICAL: Stop election permanently?",
                     default=False,
                     style=custom_style,
                 ).ask_async()
@@ -77,21 +103,25 @@ async def main():
                 response = await client.stop_election()
                 print(f"Execution Receipt:\n{response}")
 
-            elif "3." in choice:
+            elif "6." in choice:
+                print("\nFetching system metrics...")
+                response = await client.get_metrics()
+                print(f"System Metrics:\n{response}")
+
+            elif "7." in choice:
                 print("\nRequesting system audit results...")
                 response = await client.get_results()
                 print(f"Tally Verification Data:\n{response}")
 
-            elif "4." in choice:
+            elif "8." in choice:
                 print("\nChecking active system state...")
                 response = await client.get_status()
                 print(f"System State Registry Details:\n{response}")
 
-            elif "5." in choice:
+            elif "9." in choice:
                 print("Logging out safely from security session...")
                 break
 
-            # Pause momentarily so that live notification loops don't instantly wipe stdout
             await asyncio.sleep(0.5)
 
         except ConnectionError:
