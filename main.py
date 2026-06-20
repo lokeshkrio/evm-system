@@ -13,13 +13,11 @@ logger = logging.getLogger(__name__)
 
 
 async def main() -> None:
-    application = Application()
-    shutdown_event = asyncio.Event()
+    app = Application()
 
     try:
-        await application.start()
-        logger.info("Server listening on ws://%s:%d", application.host, application.port)
-        await shutdown_event.wait()
+        await app.start()
+        await app.run()
     except asyncio.CancelledError:
         logger.info("Main task cancelled")
     except Exception:
@@ -28,7 +26,7 @@ async def main() -> None:
     finally:
         logger.info("Beginning shutdown")
         with suppress(Exception):
-            await application.stop()
+            await app.stop()
         logger.info("Shutdown complete")
 
 
