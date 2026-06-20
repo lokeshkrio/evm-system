@@ -6,12 +6,12 @@ from utils.hashing import hash_voter_id
 
 
 class TerminalClient(BaseClient):
-    def __init__(self, terminal_id: str, base_uri: str = "ws://localhost:8765"):
+    def __init__(self, terminal_id: str, base_uri: str = "ws://localhost:8765", api_key: str | None = None):
         # Safely escape spacing inside IDs
         encoded_id = urllib.parse.quote(terminal_id)
         full_uri = f"{base_uri}/?id={encoded_id}"
 
-        super().__init__(uri=full_uri)
+        super().__init__(uri=full_uri, api_key=api_key)
         self.terminal_id = terminal_id
 
     async def cast_vote(self, voter_id: str, candidate_id: int) -> dict:

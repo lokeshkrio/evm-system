@@ -4,11 +4,11 @@ from clients.base.base_client import BaseClient
 
 class AdminClient(BaseClient):
     def __init__(
-        self, admin_id: str = "Admin_Console", base_uri: str = "ws://localhost:8765"
+        self, admin_id: str = "Admin_Console", base_uri: str = "ws://localhost:8765", api_key: str | None = None
     ):
         encoded_id = urllib.parse.quote(admin_id)
         full_uri = f"{base_uri}/?id={encoded_id}"
-        super().__init__(uri=full_uri)
+        super().__init__(uri=full_uri, api_key=api_key)
 
     async def start_election(self) -> dict:
         """Sends an RPC command to change state to ELECTION_STARTED."""
@@ -37,6 +37,10 @@ class AdminClient(BaseClient):
     async def get_status(self) -> dict:
         """Checks the current active system state."""
         return await self.send_request("get_status", {})
+
+    async def get_metrics(self) -> dict:
+        """Fetches the system metrics including active connections."""
+        return await self.send_request("get_metrics", {})
 
     async def handle_notification(self, notification: dict) -> None:
         """Optional: Listen for live voting events on the admin console."""
