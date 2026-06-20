@@ -27,4 +27,11 @@ def admin():
     print("Admin stopped")
 
 
+@app.command()
+def seed():
+    print("Starting seeding")
+    subprocess.run([sys.executable, "-m", "data.seed"])
+    print("Seeding stopped")
+
+
 app()
