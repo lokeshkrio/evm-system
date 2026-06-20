@@ -1,79 +1,122 @@
 # EVM-System-v2
 
-A secure, asynchronous, event-driven Electronic Voting Machine backend built in Python. The project simulates the core components of a distributed voting system with append-only storage, cryptographic audit logs, JSON-RPC communication, and WebSocket-based clients.
+An asynchronous, event-driven Electronic Voting Machine backend written in Python. The system uses JSON-RPC over WebSockets, layered architecture, state machines, and append-only audit logs to simulate the backend components of a secure voting infrastructure.
 
-## Overview
-
-EVM-System-v2 is a learning and portfolio project designed to explore backend architecture, distributed systems, asynchronous programming, and secure event logging.
-
-The system separates concerns into multiple layers:
-
-- Network Layer
-- Service Layer
-- Repository Layer
-- Database Layer
-- Audit Layer
-
-Communication between clients and the server is performed through JSON-RPC over WebSockets.
+> **Educational Project**
+>
+> This project is intended for learning backend engineering, asynchronous programming, networking, and system design concepts. It is **not intended for real-world elections**.
 
 ---
 
-## Features
+# Features
 
-### Election Lifecycle
+## Election Lifecycle
 
 - Start election
 - Stop election
 - Halt election
 - Query election status
-- Query election state
+- State machine driven workflow
 
-### Voting
+## Voting
 
-- Cast vote
+- Cast votes
 - Duplicate vote prevention
 - Candidate validation
-- Voting state validation
+- Election state validation
 
-### Audit Logging
+## Audit Logging
 
-- Append-only cryptographic ledger
+- Append-only event storage
 - Hash-chained events
 - Election start events
 - Election stop events
 - Halt events
 - Vote events
-- Duplicate vote events
+- Duplicate vote attempts
 
-### Network Layer
+## Networking
 
 - JSON-RPC 2.0 protocol
-- WebSocket server
+- WebSocket communication
 - Multi-client support
 - Connection management
-- Request validation with Pydantic
+- Request validation using Pydantic
 
-### Persistence
+## Persistence
 
 - SQLite database
 - Repository pattern
+- Candidate storage
+- Vote storage
 - Metadata storage
 - Event storage
-- Vote storage
-- Candidate storage
 
-### Architecture
+## Architecture
 
 - Layered architecture
-- Dependency separation
 - State machine driven workflow
-- Async I/O using asyncio
+- Async I/O with asyncio
 - Repository pattern
-- Service-oriented design
+- Service layer abstraction
+- Separation of concerns
 
 ---
 
-## Project Structure
+# Technology Stack
+
+- Python 3.13+
+- asyncio
+- websockets
+- Pydantic
+- SQLite
+- aiosqlite
+- JSON-RPC 2.0
+
+---
+
+# High-Level Architecture
+
+```text
+Client
+    │
+    ▼
+WebSocket Server
+    │
+    ▼
+RPC Dispatcher
+    │
+    ▼
+Election Service
+    │
+ ┌──┴─────────────────┐
+ ▼                    ▼
+State Machine     Audit Service
+ │
+ ▼
+Repositories
+ │
+ ▼
+SQLite Database
+```
+
+---
+
+# Core Components
+
+| Component        | Responsibility       |
+| ---------------- | -------------------- |
+| WebSocket Server | Client communication |
+| RPC Dispatcher   | Request routing      |
+| Election Service | Business logic       |
+| State Machine    | Election lifecycle   |
+| Audit Service    | Event logging        |
+| Repositories     | Data access layer    |
+| SQLite           | Persistent storage   |
+
+---
+
+# Project Structure
 
 ```text
 .
@@ -115,101 +158,189 @@ Communication between clients and the server is performed through JSON-RPC over 
 
 ---
 
-## Architecture
+# Quick Start
+
+## Clone Repository
+
+```bash
+git clone https://github.com/yourusername/EVM-System-v2.git
+cd EVM-System-v2
+```
+
+## Create Virtual Environment
+
+```bash
+python -m venv .venv
+```
+
+### Windows
+
+```bash
+.venv\Scripts\activate
+```
+
+### Linux / macOS
+
+```bash
+source .venv/bin/activate
+```
+
+## Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+## Initialize Database
+
+```bash
+python database/init_db.py
+```
+
+## Start Server
+
+```bash
+python main.py
+```
+
+---
+
+# JSON-RPC Protocol
+
+The system communicates using JSON-RPC 2.0 over WebSockets.
+
+## Example Request
+
+```json
+{
+    "jsonrpc": "2.0",
+    "method": "cast_vote",
+    "params": {
+        "voter_hash": "f4ab7d4f1c8e...",
+        "candidate_id": 3
+    },
+    "id": "e8d47f32"
+}
+```
+
+## Example Response
+
+```json
+{
+    "jsonrpc": "2.0",
+    "result": {
+        "status": "success"
+    },
+    "id": "e8d47f32"
+}
+```
+
+---
+
+# Security Features
+
+## Voter Anonymity
+
+Voter identifiers are hashed using SHA-256 before transmission and storage.
+
+## Validation
+
+All requests are validated using Pydantic schemas.
+
+## Duplicate Vote Prevention
+
+The system prevents multiple votes from the same voter.
+
+## Immutable Audit Trail
+
+Events are stored in an append-only hash chain.
+
+---
+
+# Design Principles
+
+- Separation of concerns
+- Layered architecture
+- Repository pattern
+- Service-oriented design
+- State machine driven workflow
+- Immutable event storage
+- Async architecture
+- Strong protocol validation
+
+---
+
+# Sequence Flow
 
 ```text
-Client
-    │
-    ▼
+Terminal Client
+       │
+       ▼
 WebSocket Server
-    │
-    ▼
+       │
+       ▼
 RPC Dispatcher
-    │
-    ▼
+       │
+       ▼
 Election Service
-    │
- ┌──┴─────────────────┐
- ▼                    ▼
-State Machine     Audit Service
- │
- ▼
+       │
+       ▼
 Repositories
- │
- ▼
+       │
+       ▼
 SQLite Database
 ```
 
 ---
 
-## Technology Stack
+# Planned Improvements
 
-- Python 3.13+
-- asyncio
-- websockets
-- Pydantic
-- SQLite
-- aiosqlite
-- JSON-RPC 2.0
-
----
-
-## Design Principles
-
-- Separation of concerns
-- Append-only event storage
-- Immutable audit ledger
-- Asynchronous architecture
-- Repository pattern
-- Service layer abstraction
-- Strong protocol validation
-
----
-
-## JSON-RPC 2.0 Protocol Specifications
-
-To ensure reliable and secure client-server communication, the system implements standard JSON-RPC 2.0 with custom features:
-
-- **Unified Request Identification**: Transaction IDs (`id`) support both string and integer formats. The client generates unique IDs consisting of a `UUIDv4` token combined with a connection-specific host/port salt (`uuid4_host_port`) to prevent request collisions and track sessions.
-- **Cryptographic Voter Anonymity**: Voter IDs are cryptographically hashed using SHA-256 on the client side (`voter_hash`) before transmission to the voting server to preserve voter anonymity in the database.
-- **Strict Validation Schema**: All RPC methods and data payloads are validated using Pydantic models on both the sender and receiver sides.
-
----
-
-## Future Improvements
-
-- Event bus
-- Publish-subscribe notifications
 - HMAC request signatures
 - Rate limiting
 - Authentication
 - Role-based access control
-- Distributed nodes
-- Leader election
-- Persistent event sourcing
-- Web dashboard
+- Event notifications
 - Metrics and monitoring
-- Unit and integration tests
+- Integration tests
+- Export functionality
+- Candidate import from JSON
 
 ---
 
-## Learning Objectives
+# Experimental Ideas
+
+- Distributed nodes
+- Leader election
+- Event bus
+- Publish-subscribe architecture
+- Web dashboard
+- Persistent event sourcing
+
+---
+
+# Learning Objectives
 
 This project was built to explore:
 
-- Async programming in Python
+- Async programming with asyncio
 - WebSocket communication
 - JSON-RPC protocol design
 - State machines
 - Repository pattern
 - Service-oriented architecture
-- Cryptographic audit logging
-- Distributed systems concepts
+- Event-driven systems
+- Secure audit logging
 - Backend engineering principles
-- Event-driven design
+- Distributed systems concepts
 
 ---
 
-## Disclaimer
+# Disclaimer
 
-This project is intended for educational purposes and is not designed for production elections.
+This project is intended solely for educational purposes and portfolio development. It is not designed or certified for use in real-world elections.
+
+---
+
+# License
+
+MIT License
