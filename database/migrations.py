@@ -1,11 +1,12 @@
 import logging
 
 from database.connection import DBConnection
+from utils.hashing import GENESIS_EVENT_HASH, hash_database_event
 
 logger = logging.getLogger(__name__)
 
 SCHEMA_VERSION_KEY = "schema_version"
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 2
 
 
 async def run_migrations(db: DBConnection) -> None:
@@ -30,6 +31,12 @@ async def run_migrations(db: DBConnection) -> None:
         await _add_vote_candidate_foreign_key(db)
         await _set_schema_version(db, 1)
         logger.info("Database migrated to schema version 1")
+        version = 1
+
+    if version < 2:
+        await _add_event_hash_chain(db)
+        await _set_schema_version(db, 2)
+        logger.info("Database migrated to schema version 2")
 
 
 async def _add_vote_candidate_foreign_key(db: DBConnection) -> None:
@@ -93,3 +100,69 @@ async def _set_schema_version(db: DBConnection, version: int) -> None:
         (SCHEMA_VERSION_KEY, str(version)),
     )
     await db.connection.commit()
+
+
+async def _add_event_hash_chain(db: DBConnection) -> None:
+    assert db.connection is not None
+
+    columns_cursor = await db.connection.execute("PRAGMA table_info(events)")
+    columns = {row["name"] for row in await columns_cursor.fetchall()}
+    if {"previous_hash", "event_hash"}.issubset(columns):
+        return
+
+    cursor = await db.connection.execute(
+        """
+        SELECT sequence_no, event_type, payload, timestamp
+        FROM events
+        ORDER BY sequence_no
+        """
+    )
+    existing_events = await cursor.fetchall()
+
+    async with db.transaction():
+        await db.connection.execute(
+            """
+            CREATE TABLE events_new (
+                sequence_no INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                timestamp TEXT NOT NULL,
+                previous_hash TEXT NOT NULL,
+                event_hash TEXT UNIQUE NOT NULL
+            )
+            """
+        )
+
+        previous_hash = GENESIS_EVENT_HASH
+        for event in existing_events:
+            event_hash = hash_database_event(
+                previous_hash,
+                event["event_type"],
+                event["payload"],
+                event["timestamp"],
+            )
+            await db.connection.execute(
+                """
+                INSERT INTO events_new(
+                    sequence_no,
+                    event_type,
+                    payload,
+                    timestamp,
+                    previous_hash,
+                    event_hash
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event["sequence_no"],
+                    event["event_type"],
+                    event["payload"],
+                    event["timestamp"],
+                    previous_hash,
+                    event_hash,
+                ),
+            )
+            previous_hash = event_hash
+
+        await db.connection.execute("DROP TABLE events")
+        await db.connection.execute("ALTER TABLE events_new RENAME TO events")

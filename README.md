@@ -31,6 +31,7 @@ An asynchronous, event-driven Electronic Voting Machine backend written in Pytho
 
 - Append-only event storage
 - Hash-chained events
+- Startup event-chain verification
 - Election start events
 - Election stop events
 - Halt events
@@ -61,6 +62,8 @@ An asynchronous, event-driven Electronic Voting Machine backend written in Pytho
 - Async I/O with asyncio
 - Repository pattern
 - Service layer abstraction
+- Unit of Work transaction boundary
+- Post-commit event bus
 - Separation of concerns
 
 ---
@@ -311,7 +314,6 @@ SQLite Database
 - Rate limiting
 - Authentication
 - Role-based access control
-- Event notifications
 - Metrics and monitoring
 - Integration tests
 - Export functionality

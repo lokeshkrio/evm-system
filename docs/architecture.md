@@ -8,21 +8,27 @@ README is an overview; when the two differ, this document takes precedence.
 Requests flow through these layers:
 
 ```text
-WebSocketServer -> RPCDispatcher -> ElectionService -> Repositories -> SQLite
-                                      |                  |
-                                      v                  v
-                               StateMachine       database events
-                                      |
-                                      v
-                              JSONL audit mirror
+Application
+    |
+    v
+WebSocketServer -> RPCDispatcher -> ElectionService -> UnitOfWork -> SQLite
+                                      |      |              |
+                                      v      v              v
+                             State policy  Repositories  chained events
+                                             |
+                                      post-commit EventBus
+                                             |
+                         Audit / Metrics / WebSocket subscribers
 ```
 
 - `server/` owns WebSocket and JSON-RPC behavior. It contains no election rules or SQL.
-- `services/` coordinates use cases and transaction boundaries. It contains no SQL.
-- `repositories/` owns SQL for one persistence concern per repository.
-- `database/` owns connection lifecycle, transactions, schema creation, and migrations.
+- `services/` coordinates use cases through a Unit of Work. It contains no SQL.
+- `repositories/` owns SQL for one persistence concern and never commits.
+- `database/` owns connection lifecycle, Unit of Work, schema, and migrations.
+- `events/` owns post-commit domain events, dispatch, and subscribers.
 - `models/` owns domain data structures and enums.
 - `clients/` owns client-side communication and presentation.
+- `application.py` is the composition root and application lifecycle owner.
 
 ## Election Lifecycle
 
@@ -35,9 +41,11 @@ INITIALIZED -> STARTED -> VOTING -> STARTED
 STARTED or HALTED -> ENDED
 ```
 
-Transitions are explicit: `start_election()`, `enable_vote()`, `vote_casted()`,
-`halt()`, `resume()`, and `end()`. `VOTING` grants one voting opportunity. A
-successful vote automatically returns the state to `STARTED`.
+`metadata.election_state` is the source of truth. `ElectionStateMachine` stores
+no state; it is a stateless policy exposing explicit `start_election()`,
+`enable_vote()`, `vote_casted()`, `halt()`, `resume()`, and `end()` rules.
+`VOTING` grants one voting opportunity. A successful vote atomically returns the
+durable state to `STARTED`.
 
 All mutating election operations share one `asyncio.Lock`. This prevents an
 administrative transition from interleaving with a vote while database I/O is
@@ -45,20 +53,24 @@ in progress.
 
 ## Persistence and Transactions
 
-`ElectionService` coordinates transactions but delegates each SQL statement to
-the repository that owns its table. A successful vote transaction contains:
+`UnitOfWork` owns the transaction and commit. `ElectionService` coordinates the
+use case while each repository owns its SQL. A vote transaction contains:
 
-1. insertion into `votes`;
-2. persistence of the resulting `STARTED` state in `metadata`;
-3. insertion of the `VOTE_CAST` record into `events`.
+1. durable-state verification;
+2. active-candidate verification;
+3. duplicate-voter verification;
+4. insertion into `votes`;
+5. persistence of `STARTED` in `metadata`;
+6. insertion of the chained `VOTE_CAST` record into `events`.
 
-The three writes commit or roll back together. Lifecycle transitions similarly
-persist metadata and their database event together. Runtime state is restored
-to its previous value when persistence fails.
+All checks and writes happen after `BEGIN IMMEDIATE` and commit or roll back
+together. Lifecycle transitions similarly persist metadata and their event in
+one Unit of Work.
 
-The database `events` table is the authoritative operational event history.
-`logs/audit_ledger.jsonl` is a hash-chained secondary mirror. Failure of that
-secondary sink is logged but does not report a committed operation as failed.
+Each database event stores `previous_hash` and `event_hash`. Startup verifies the
+complete chain before serving requests. After commit, the domain event is
+published to audit, metrics, and WebSocket subscribers. Subscriber failures are
+logged and cannot change the committed result.
 
 ## Restart Recovery
 

@@ -24,7 +24,7 @@ class MetadataRepository(BaseRepository):
         row = await cursor.fetchone()
         return row["value"] if row else None
 
-    async def set(self, key: str, value: str, *, commit: bool = True) -> None:
+    async def set(self, key: str, value: str) -> None:
         """Sets or replaces a metadata key-value pair in the database.
 
         Args:
@@ -39,5 +39,3 @@ class MetadataRepository(BaseRepository):
             """,
             (key, value),
         )
-        if commit:
-            await self.conn.commit()

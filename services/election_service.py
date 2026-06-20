@@ -1,291 +1,297 @@
 import asyncio
 import json
-import logging
 import sqlite3
-from datetime import UTC, datetime
+from collections.abc import Callable
 from typing import Any
 
+from database.unit_of_work import UnitOfWork
+from events.event_bus import EventBus
+from events.event_types import (
+    DomainEvent,
+    DuplicateVoteEvent,
+    ElectionHaltedEvent,
+    ElectionRecoveredEvent,
+    ElectionResumedEvent,
+    ElectionStartedEvent,
+    ElectionStoppedEvent,
+    VoteCastEvent,
+    VotingEnabledEvent,
+)
 from models.enums import ElectionState
 from models.vote import Vote
-from repositories.candidate_repository import CandidateRepository
 from repositories.event_repository import EventRepository
 from repositories.metadata_repository import MetadataRepository
-from repositories.vote_repository import VoteRepository
-from services.audit_service import AuditEvent, AuditService
 from services.state_machine import ElectionStateMachine
+from utils.hashing import GENESIS_EVENT_HASH, hash_database_event
 
-logger = logging.getLogger(__name__)
+UnitOfWorkFactory = Callable[[], UnitOfWork]
 
 
 class ElectionService:
-    """Coordinates election rules without owning SQL or transport concerns."""
+    """Coordinates durable election use cases and post-commit events."""
 
     def __init__(
         self,
-        vote_repository: VoteRepository,
-        candidate_repository: CandidateRepository,
-        metadata_repository: MetadataRepository,
-        event_repository: EventRepository,
-        audit_service: AuditService,
+        unit_of_work_factory: UnitOfWorkFactory,
         state_machine: ElectionStateMachine,
+        event_bus: EventBus,
     ) -> None:
-        self.vote_repository = vote_repository
-        self.candidate_repository = candidate_repository
-        self.metadata_repository = metadata_repository
-        self.event_repository = event_repository
-        self.audit = audit_service
-        self.state = state_machine
-        self.db = vote_repository.db
-
-        repositories = (
-            candidate_repository,
-            metadata_repository,
-            event_repository,
-        )
-        if any(repository.db is not self.db for repository in repositories):
-            raise ValueError("Election repositories must share one DBConnection")
-
-        # State transitions and vote writes form one serialized mutation stream.
+        self._new_unit_of_work = unit_of_work_factory
+        self.state_machine = state_machine
+        self.event_bus = event_bus
         self._mutation_lock = asyncio.Lock()
 
-    @property
-    def can_vote(self) -> bool:
-        return self.state.state == ElectionState.VOTING
-
     async def initialize(self) -> None:
-        """Restore durable state and recover an interrupted voting session."""
+        """Verify event integrity and recover durable state after restart."""
+        recovery_event: DomainEvent | None = None
+
         async with self._mutation_lock:
-            persisted = await self.metadata_repository.get("election_state")
-            if persisted is None:
-                await self.metadata_repository.set(
-                    "election_state",
-                    ElectionState.INITIALIZED.value,
-                )
-                return
+            async with self._new_unit_of_work() as uow:
+                await self._verify_event_chain(uow.events)
+                persisted = await uow.metadata.get("election_state")
 
-            try:
-                restored_state = ElectionState(persisted)
-            except ValueError as exc:
-                raise RuntimeError(
-                    f"Invalid persisted election state: {persisted!r}"
-                ) from exc
-
-            if restored_state == ElectionState.VOTING:
-                restored_state = ElectionState.STARTED
-                details = {
-                    "from_state": ElectionState.VOTING.value,
-                    "to_state": restored_state.value,
-                    "reason": "server_restart",
-                }
-                async with self.db.transaction():
-                    await self.metadata_repository.set(
+                if persisted is None:
+                    await uow.metadata.set(
                         "election_state",
-                        restored_state.value,
-                        commit=False,
+                        ElectionState.INITIALIZED.value,
                     )
-                    await self._append_db_event(
-                        AuditEvent.ELECTION_RECOVERED,
-                        details,
-                    )
-                await self._write_file_audit(AuditEvent.ELECTION_RECOVERED, details)
+                else:
+                    current = self._parse_state(persisted)
+                    if current == ElectionState.VOTING:
+                        recovery_event = ElectionRecoveredEvent(
+                            {
+                                "from_state": ElectionState.VOTING.value,
+                                "to_state": ElectionState.STARTED.value,
+                                "reason": "server_restart",
+                            }
+                        )
+                        await uow.metadata.set(
+                            "election_state",
+                            ElectionState.STARTED.value,
+                        )
+                        await self._append_db_event(uow.events, recovery_event)
 
-            self.state.restore(restored_state)
+        if recovery_event is not None:
+            await self.event_bus.publish(recovery_event)
 
     async def get_state(self) -> dict[str, str]:
-        return {"state": self.state.state.value}
+        async with self._new_unit_of_work() as uow:
+            state = await self._load_state(uow.metadata)
+        return {"state": state.value}
 
     async def get_status(self) -> dict[str, str | bool]:
+        async with self._new_unit_of_work() as uow:
+            state = await self._load_state(uow.metadata)
         return {
-            "state": self.state.state.value,
-            "can_vote": self.can_vote,
+            "state": state.value,
+            "can_vote": state == ElectionState.VOTING,
         }
 
     async def start_election(self) -> dict[str, Any]:
+        event: DomainEvent | None = None
         async with self._mutation_lock:
-            old_state = self.state.state
-            if not self.state.start_election():
-                return {"success": False, "reason": "Election already started"}
+            async with self._new_unit_of_work() as uow:
+                current = await self._load_state(uow.metadata)
+                next_state = self.state_machine.start_election(current)
+                if next_state is None:
+                    result = {"success": False, "reason": "Election already started"}
+                else:
+                    event = ElectionStartedEvent({"state": next_state.value})
+                    await uow.metadata.set("election_state", next_state.value)
+                    await self._append_db_event(uow.events, event)
+                    result = {"success": True, "state": next_state.value}
 
-            details = {"state": self.state.state.value}
-            try:
-                await self._persist_state_event(AuditEvent.ELECTION_STARTED, details)
-            except BaseException:
-                self.state.restore(old_state)
-                raise
-
-            await self._write_file_audit(AuditEvent.ELECTION_STARTED, details)
-            return {"success": True, "state": self.state.state.value}
+        if event is not None:
+            await self.event_bus.publish(event)
+        return result
 
     async def enable_vote(self) -> dict[str, Any]:
+        event: DomainEvent | None = None
         async with self._mutation_lock:
-            old_state = self.state.state
-            if not self.state.enable_vote():
-                return {"success": False, "reason": "Cannot enable voting"}
+            async with self._new_unit_of_work() as uow:
+                current = await self._load_state(uow.metadata)
+                next_state = self.state_machine.enable_vote(current)
+                if next_state is None:
+                    result = {"success": False, "reason": "Cannot enable voting"}
+                else:
+                    event = VotingEnabledEvent({"state": next_state.value})
+                    await uow.metadata.set("election_state", next_state.value)
+                    await self._append_db_event(uow.events, event)
+                    result = {"success": True, "state": next_state.value}
 
-            details = {"state": self.state.state.value}
-            try:
-                await self._persist_state_event(AuditEvent.VOTING_ENABLED, details)
-            except BaseException:
-                self.state.restore(old_state)
-                raise
-
-            await self._write_file_audit(AuditEvent.VOTING_ENABLED, details)
-            return {"success": True, "state": self.state.state.value}
+        if event is not None:
+            await self.event_bus.publish(event)
+        return result
 
     async def halt_election(self) -> dict[str, Any]:
+        event: DomainEvent | None = None
         async with self._mutation_lock:
-            old_state = self.state.state
-            if not self.state.halt():
-                return {"success": False, "reason": "Cannot halt election"}
+            async with self._new_unit_of_work() as uow:
+                current = await self._load_state(uow.metadata)
+                next_state = self.state_machine.halt(current)
+                if next_state is None:
+                    result = {"success": False, "reason": "Cannot halt election"}
+                else:
+                    event = ElectionHaltedEvent({"state": next_state.value})
+                    await uow.metadata.set("election_state", next_state.value)
+                    await self._append_db_event(uow.events, event)
+                    result = {"success": True, "state": next_state.value}
 
-            details = {"state": self.state.state.value}
-            try:
-                await self._persist_state_event(AuditEvent.ELECTION_HALTED, details)
-            except BaseException:
-                self.state.restore(old_state)
-                raise
-
-            await self._write_file_audit(AuditEvent.ELECTION_HALTED, details)
-            return {"success": True, "state": self.state.state.value}
+        if event is not None:
+            await self.event_bus.publish(event)
+        return result
 
     async def resume_election(self) -> dict[str, Any]:
+        event: DomainEvent | None = None
         async with self._mutation_lock:
-            old_state = self.state.state
-            if not self.state.resume():
-                return {"success": False, "reason": "Cannot resume election"}
+            async with self._new_unit_of_work() as uow:
+                current = await self._load_state(uow.metadata)
+                next_state = self.state_machine.resume(current)
+                if next_state is None:
+                    result = {"success": False, "reason": "Cannot resume election"}
+                else:
+                    event = ElectionResumedEvent({"state": next_state.value})
+                    await uow.metadata.set("election_state", next_state.value)
+                    await self._append_db_event(uow.events, event)
+                    result = {"success": True, "state": next_state.value}
 
-            details = {"state": self.state.state.value}
-            try:
-                await self._persist_state_event(AuditEvent.ELECTION_RESUMED, details)
-            except BaseException:
-                self.state.restore(old_state)
-                raise
-
-            await self._write_file_audit(AuditEvent.ELECTION_RESUMED, details)
-            return {"success": True, "state": self.state.state.value}
+        if event is not None:
+            await self.event_bus.publish(event)
+        return result
 
     async def stop_election(self) -> dict[str, Any]:
+        event: DomainEvent | None = None
         async with self._mutation_lock:
-            old_state = self.state.state
-            if not self.state.end():
-                return {"success": False, "reason": "Cannot stop election"}
+            async with self._new_unit_of_work() as uow:
+                current = await self._load_state(uow.metadata)
+                next_state = self.state_machine.end(current)
+                if next_state is None:
+                    result = {"success": False, "reason": "Cannot stop election"}
+                else:
+                    event = ElectionStoppedEvent({"state": next_state.value})
+                    await uow.metadata.set("election_state", next_state.value)
+                    await self._append_db_event(uow.events, event)
+                    result = {"success": True, "state": next_state.value}
 
-            details = {"state": self.state.state.value}
-            try:
-                await self._persist_state_event(AuditEvent.ELECTION_STOPPED, details)
-            except BaseException:
-                self.state.restore(old_state)
-                raise
-
-            await self._write_file_audit(AuditEvent.ELECTION_STOPPED, details)
-            return {"success": True, "state": self.state.state.value}
+        if event is not None:
+            await self.event_bus.publish(event)
+        return result
 
     async def cast_vote(
         self,
         voter_hash: str,
         candidate_id: int,
     ) -> dict[str, Any]:
+        event: DomainEvent | None = None
+
         async with self._mutation_lock:
-            if not self.can_vote:
-                return {"success": False, "reason": "Voting disabled"}
-
-            if not await self.candidate_repository.is_exists(candidate_id):
-                return {"success": False, "reason": "Invalid or inactive candidate"}
-
-            if await self.vote_repository.has_voted(voter_hash):
-                await self._record_duplicate_attempt()
-                return {"success": False, "reason": "Duplicate vote"}
-
-            timestamp = datetime.now(UTC).isoformat()
-            vote = Vote(
-                voter_hash=voter_hash,
-                candidate_id=candidate_id,
-                timestamp=timestamp,
-            )
-            details = {"candidate_id": candidate_id}
-            old_state = self.state.state
-
             try:
-                async with self.db.transaction():
-                    await self.vote_repository.record_vote(vote, commit=False)
-                    if not self.state.vote_casted():
-                        raise RuntimeError("Voting state changed during vote processing")
-                    await self.metadata_repository.set(
-                        "election_state",
-                        self.state.state.value,
-                        commit=False,
-                    )
-                    await self._append_db_event(
-                        AuditEvent.VOTE_CAST,
-                        details,
-                        timestamp=timestamp,
-                    )
+                async with self._new_unit_of_work() as uow:
+                    current = await self._load_state(uow.metadata)
+                    if current != ElectionState.VOTING:
+                        result = {"success": False, "reason": "Voting disabled"}
+                    elif not await uow.candidates.is_exists(candidate_id):
+                        result = {
+                            "success": False,
+                            "reason": "Invalid or inactive candidate",
+                        }
+                    elif await uow.votes.has_voted(voter_hash):
+                        event = DuplicateVoteEvent(
+                            {"reason": "voter_already_recorded"}
+                        )
+                        await self._append_db_event(uow.events, event)
+                        result = {"success": False, "reason": "Duplicate vote"}
+                    else:
+                        next_state = self.state_machine.vote_casted(current)
+                        if next_state is None:
+                            raise RuntimeError("Voting state transition was rejected")
+
+                        event = VoteCastEvent({"candidate_id": candidate_id})
+                        vote = Vote(
+                            voter_hash=voter_hash,
+                            candidate_id=candidate_id,
+                            timestamp=event.timestamp,
+                        )
+                        await uow.votes.record_vote(vote)
+                        await uow.metadata.set("election_state", next_state.value)
+                        await self._append_db_event(uow.events, event)
+                        result = {"success": True}
             except sqlite3.IntegrityError as exc:
-                self.state.restore(old_state)
                 if "votes.voter_hash" not in str(exc):
                     raise
-                await self._record_duplicate_attempt()
-                return {"success": False, "reason": "Duplicate vote"}
-            except BaseException:
-                self.state.restore(old_state)
-                raise
+                event = await self._record_duplicate_attempt()
+                result = {"success": False, "reason": "Duplicate vote"}
 
-            await self._write_file_audit(AuditEvent.VOTE_CAST, details)
-            return {"success": True}
+        if event is not None:
+            await self.event_bus.publish(event)
+        return result
 
     async def get_results(self) -> dict[str, Any]:
-        if self.state.state != ElectionState.ENDED:
-            return {
-                "success": False,
-                "reason": "Results are available only after the election ends",
-            }
+        async with self._new_unit_of_work() as uow:
+            state = await self._load_state(uow.metadata)
+            if state != ElectionState.ENDED:
+                return {
+                    "success": False,
+                    "reason": "Results are available only after the election ends",
+                }
+            results = await uow.votes.get_results()
 
-        return {
-            "success": True,
-            "results": await self.vote_repository.get_results(),
-        }
+        return {"success": True, "results": results}
 
-    async def _persist_state_event(
-        self,
-        event: AuditEvent,
-        details: dict[str, Any],
-    ) -> None:
-        async with self.db.transaction():
-            await self.metadata_repository.set(
-                "election_state",
-                self.state.state.value,
-                commit=False,
-            )
-            await self._append_db_event(event, details)
+    async def _record_duplicate_attempt(self) -> DomainEvent:
+        event = DuplicateVoteEvent({"reason": "voter_already_recorded"})
+        async with self._new_unit_of_work() as uow:
+            await self._append_db_event(uow.events, event)
+        return event
 
     async def _append_db_event(
         self,
-        event: AuditEvent,
-        details: dict[str, Any],
-        *,
-        timestamp: str | None = None,
+        repository: EventRepository,
+        event: DomainEvent,
     ) -> None:
-        await self.event_repository.append_event(
-            event.value,
-            json.dumps(details, sort_keys=True, separators=(",", ":")),
-            timestamp or datetime.now(UTC).isoformat(),
-            commit=False,
+        payload = json.dumps(event.details, sort_keys=True, separators=(",", ":"))
+        previous_hash = await repository.get_last_hash() or GENESIS_EVENT_HASH
+        event_hash = hash_database_event(
+            previous_hash,
+            event.event_type,
+            payload,
+            event.timestamp,
+        )
+        await repository.append_event(
+            event.event_type,
+            payload,
+            event.timestamp,
+            previous_hash,
+            event_hash,
         )
 
-    async def _record_duplicate_attempt(self) -> None:
-        details = {"reason": "voter_already_recorded"}
-        async with self.db.transaction():
-            await self._append_db_event(AuditEvent.DUPLICATE_VOTE, details)
-        await self._write_file_audit(AuditEvent.DUPLICATE_VOTE, details)
+    async def _verify_event_chain(self, repository: EventRepository) -> None:
+        previous_hash = GENESIS_EVENT_HASH
+        for event in await repository.list_events():
+            computed_hash = hash_database_event(
+                previous_hash,
+                str(event["event_type"]),
+                str(event["payload"]),
+                str(event["timestamp"]),
+            )
+            if event["previous_hash"] != previous_hash:
+                raise RuntimeError("Database event chain has a broken link")
+            if event["event_hash"] != computed_hash:
+                raise RuntimeError("Database event chain integrity check failed")
+            previous_hash = computed_hash
 
-    async def _write_file_audit(
+    async def _load_state(
         self,
-        event: AuditEvent,
-        details: dict[str, Any],
-    ) -> None:
+        repository: MetadataRepository,
+    ) -> ElectionState:
+        persisted = await repository.get("election_state")
+        if persisted is None:
+            raise RuntimeError("Election state is not initialized")
+        return self._parse_state(persisted)
+
+    @staticmethod
+    def _parse_state(value: str) -> ElectionState:
         try:
-            await self.audit.log_event(event, details)
-        except Exception:
-            # The database event is authoritative; a secondary sink must not
-            # turn an already committed operation into a reported failure.
-            logger.exception("Failed to append event to JSONL audit ledger")
+            return ElectionState(value)
+        except ValueError as exc:
+            raise RuntimeError(f"Invalid persisted election state: {value!r}") from exc

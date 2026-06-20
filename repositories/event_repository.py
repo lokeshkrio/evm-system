@@ -2,33 +2,54 @@ from repositories.base_repository import BaseRepository
 
 
 class EventRepository(BaseRepository):
-    """Repository handling database operations for the events table."""
+    """SQL access for the append-only, hash-chained event table."""
+
+    async def get_last_hash(self) -> str | None:
+        cursor = await self.conn.execute(
+            """
+            SELECT event_hash
+            FROM events
+            ORDER BY sequence_no DESC
+            LIMIT 1
+            """
+        )
+        row = await cursor.fetchone()
+        return row["event_hash"] if row else None
 
     async def append_event(
         self,
         event_type: str,
         payload: str,
         timestamp: str,
-        *,
-        commit: bool = True,
+        previous_hash: str,
+        event_hash: str,
     ) -> None:
-        """Appends a new event entry into the event log/history database.
-
-        Args:
-            event_type: The string event type identifier (e.g. 'vote_cast').
-            payload: JSON string payload representing event metadata.
-            timestamp: ISO 8601 formatted timestamp of the event.
-        """
         await self.conn.execute(
             """
             INSERT INTO events(
                 event_type,
                 payload,
-                timestamp
+                timestamp,
+                previous_hash,
+                event_hash
             )
-            VALUES (?, ?, ?)
+            VALUES (?, ?, ?, ?, ?)
             """,
-            (event_type, payload, timestamp),
+            (event_type, payload, timestamp, previous_hash, event_hash),
         )
-        if commit:
-            await self.conn.commit()
+
+    async def list_events(self) -> list[dict[str, str | int]]:
+        cursor = await self.conn.execute(
+            """
+            SELECT
+                sequence_no,
+                event_type,
+                payload,
+                timestamp,
+                previous_hash,
+                event_hash
+            FROM events
+            ORDER BY sequence_no
+            """
+        )
+        return [dict(row) for row in await cursor.fetchall()]

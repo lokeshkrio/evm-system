@@ -28,7 +28,7 @@ dev = [
 evm = "cli:app"
 
 [tool.setuptools]
-py-modules = ["cli", "config", "main"]
+py-modules = ["application", "cli", "config", "main"]
 
 [tool.setuptools.packages.find]
 include = [

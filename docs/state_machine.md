@@ -10,6 +10,10 @@
 | `STARTED` | `stop_election` | `ENDED` | Election is finalized |
 | `HALTED` | `stop_election` | `ENDED` | Halted election is finalized |
 
-Every other transition is rejected without changing runtime or persisted state.
+The state machine is stateless. Each method accepts the durable current state and
+returns the permitted next state or `None`. `metadata.election_state` is always
+the authoritative state.
+
+Every other transition is rejected without changing persisted state.
 On restart, persisted `VOTING` is deliberately recovered to `STARTED` because a
 one-voter grant cannot safely survive loss of its client session.

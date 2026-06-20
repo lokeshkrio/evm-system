@@ -30,7 +30,9 @@ CREATE TABLE
         sequence_no INTEGER PRIMARY KEY AUTOINCREMENT,
         event_type TEXT NOT NULL,
         payload TEXT NOT NULL,
-        timestamp TEXT NOT NULL
+        timestamp TEXT NOT NULL,
+        previous_hash TEXT NOT NULL,
+        event_hash TEXT UNIQUE NOT NULL
     );
 
 CREATE TABLE

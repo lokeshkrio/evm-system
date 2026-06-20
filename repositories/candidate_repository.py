@@ -90,7 +90,7 @@ class CandidateRepository(BaseRepository):
             data: The Candidate instance to insert.
 
         Returns:
-            True upon successful insertion and commit.
+            True when the insert is queued in the current unit of work.
         """
         await self.conn.execute(
             """
@@ -104,5 +104,4 @@ class CandidateRepository(BaseRepository):
                 True if data.active else False,
             ),
         )
-        await self.conn.commit()
         return True
