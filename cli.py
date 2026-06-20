@@ -30,7 +30,7 @@ def admin():
 @app.command()
 def seed():
     print("Starting seeding")
-    subprocess.run([sys.executable, "-m", "data.seed"])
+    subprocess.run([sys.executable, "-m", "database.seed"])
     print("Seeding stopped")
 
 

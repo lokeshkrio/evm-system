@@ -5,6 +5,13 @@ CREATE TABLE
         party TEXT NOT NULL,
         active INTEGER DEFAULT 1
     );
+    
+CREATE TABLE
+    IF NOT EXISTS voters (
+        voter_id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        age INTEGER NOT NULL
+    );
 
 CREATE TABLE
     IF NOT EXISTS votes (
@@ -31,5 +38,5 @@ CREATE TABLE
         name TEXT,
         secret_key TEXT,
         active INTEGER DEFAULT 1
-    )
+    );
 

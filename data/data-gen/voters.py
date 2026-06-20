@@ -5,7 +5,7 @@ from pathlib import Path
 
 fake = Faker("en_IN")
 
-NUM_RECORDS = 5000
+NUM_RECORDS = 10
 
 # Generate unique random voter ID numbers
 id_numbers = random.sample(range(100000, 999999), NUM_RECORDS)
