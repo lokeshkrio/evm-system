@@ -16,6 +16,7 @@ class Commands(str, Enum):
     GET_STATE = "get_state"
     GET_RESULTS = "get_results"
     GET_AUDIT_LOGS = "get_audit_logs"
+    GET_METRICS = "get_metrics"
 
 
 class ErrorCode(int, Enum):
@@ -82,6 +83,11 @@ class GetAuditLogsParams(ParamsModel):
     pass
 
 
+class GetMetricsParams(ParamsModel):
+    """Parameters for retrieving application metrics (none required)."""
+    pass
+
+
 class RPCRequest(BaseModel):
     """Base schema for general JSON-RPC requests."""
     model_config = ConfigDict(extra="forbid")
@@ -90,6 +96,7 @@ class RPCRequest(BaseModel):
     method: str = Field(min_length=1)
     params: dict[str, Any] | list[Any] | None = None
     id: str | int | None = None
+    api_key: str | None = None
 
 
 class CastVoteRequest(BaseModel):
@@ -98,6 +105,7 @@ class CastVoteRequest(BaseModel):
     method: Literal[Commands.CAST_VOTE]
     params: CastVoteParams
     id: str | int
+    api_key: str | None = None
 
 
 class StartElectionRequest(BaseModel):
@@ -106,6 +114,7 @@ class StartElectionRequest(BaseModel):
     method: Literal[Commands.START_ELECTION]
     params: StartElectionParams
     id: str | int
+    api_key: str | None = None
 
 
 class StopElectionRequest(BaseModel):
@@ -114,6 +123,7 @@ class StopElectionRequest(BaseModel):
     method: Literal[Commands.STOP_ELECTION]
     params: StopElectionParams
     id: str | int
+    api_key: str | None = None
 
 
 class HaltElectionRequest(BaseModel):
@@ -122,6 +132,7 @@ class HaltElectionRequest(BaseModel):
     method: Literal[Commands.HALT_ELECTION]
     params: HaltElectionParams
     id: str | int
+    api_key: str | None = None
 
 
 class GetStatusRequest(BaseModel):
@@ -130,6 +141,7 @@ class GetStatusRequest(BaseModel):
     method: Literal[Commands.GET_STATUS]
     params: GetStatusParams
     id: str | int
+    api_key: str | None = None
 
 
 class GetStateRequest(BaseModel):
@@ -138,6 +150,7 @@ class GetStateRequest(BaseModel):
     method: Literal[Commands.GET_STATE]
     params: GetStateParams
     id: str | int
+    api_key: str | None = None
 
 
 class GetResultsRequest(BaseModel):
@@ -146,6 +159,7 @@ class GetResultsRequest(BaseModel):
     method: Literal[Commands.GET_RESULTS]
     params: GetResultsParams
     id: str | int
+    api_key: str | None = None
 
 
 class GetAuditLogsRequest(BaseModel):
@@ -154,6 +168,16 @@ class GetAuditLogsRequest(BaseModel):
     method: Literal[Commands.GET_AUDIT_LOGS]
     params: GetAuditLogsParams
     id: str | int
+    api_key: str | None = None
+
+
+class GetMetricsRequest(BaseModel):
+    """Schema validation for a Get Metrics RPC request."""
+    jsonrpc: str = "2.0"
+    method: Literal[Commands.GET_METRICS]
+    params: GetMetricsParams
+    id: str | int
+    api_key: str | None = None
 
 
 class RPCResponse(BaseModel):

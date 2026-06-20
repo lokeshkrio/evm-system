@@ -18,11 +18,10 @@ def hash_database_event(
     timestamp: str,
 ) -> str:
     """Hash a canonical event envelope and its predecessor."""
-    envelope: dict[str, Any] = {
+    serialized_event = json.dumps({
         "event_type": event_type,
         "payload": payload,
-        "previous_hash": previous_hash,
         "timestamp": timestamp,
-    }
-    canonical = json.dumps(envelope, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    }, sort_keys=True, separators=(",", ":"))
+    content = previous_hash + serialized_event
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()

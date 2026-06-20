@@ -9,3 +9,9 @@ class ElectionState(Enum):
     VOTING = "VOTING"
     HALTED = "HALTED"
     ENDED = "ENDED"
+
+
+class Role(Enum):
+    """Enumeration of system roles."""
+    ADMIN = "ADMIN"
+    TERMINAL = "TERMINAL"

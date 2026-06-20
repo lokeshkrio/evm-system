@@ -1,47 +1,61 @@
+from database.unit_of_work import UnitOfWork
 from models.enums import ElectionState
 
 
-class ElectionStateMachine:
-    """Stateless policy for explicit election lifecycle transitions."""
+class PersistentElectionStateMachine:
+    """State machine that manages election lifecycle directly via the database repository."""
 
-    @staticmethod
-    def start_election(current: ElectionState) -> ElectionState | None:
+    async def get_state(self, uow: UnitOfWork) -> ElectionState:
+        persisted = await uow.metadata.get("election_state")
+        if persisted is None:
+            return ElectionState.INITIALIZED
+        try:
+            return ElectionState(persisted)
+        except ValueError as exc:
+            raise RuntimeError(f"Invalid persisted election state: {persisted!r}") from exc
+
+    async def _transition(self, uow: UnitOfWork, next_state: ElectionState) -> ElectionState:
+        await uow.metadata.set("election_state", next_state.value)
+        return next_state
+
+    async def start_election(self, uow: UnitOfWork) -> ElectionState | None:
+        current = await self.get_state(uow)
         if current != ElectionState.INITIALIZED:
             return None
-        return ElectionState.STARTED
+        return await self._transition(uow, ElectionState.STARTED)
 
-    @staticmethod
-    def enable_vote(current: ElectionState) -> ElectionState | None:
+    async def enable_vote(self, uow: UnitOfWork) -> ElectionState | None:
+        current = await self.get_state(uow)
         if current != ElectionState.STARTED:
             return None
-        return ElectionState.VOTING
+        return await self._transition(uow, ElectionState.VOTING)
 
-    @staticmethod
-    def vote_casted(current: ElectionState) -> ElectionState | None:
+    async def vote_casted(self, uow: UnitOfWork) -> ElectionState | None:
+        current = await self.get_state(uow)
         if current != ElectionState.VOTING:
             return None
-        return ElectionState.STARTED
+        return await self._transition(uow, ElectionState.STARTED)
 
-    @staticmethod
-    def halt(current: ElectionState) -> ElectionState | None:
+    async def halt(self, uow: UnitOfWork) -> ElectionState | None:
+        current = await self.get_state(uow)
         if current != ElectionState.VOTING:
             return None
-        return ElectionState.HALTED
+        return await self._transition(uow, ElectionState.HALTED)
 
-    @staticmethod
-    def resume(current: ElectionState) -> ElectionState | None:
+    async def resume(self, uow: UnitOfWork) -> ElectionState | None:
+        current = await self.get_state(uow)
         if current != ElectionState.HALTED:
             return None
-        return ElectionState.STARTED
+        return await self._transition(uow, ElectionState.STARTED)
 
-    @staticmethod
-    def end(current: ElectionState) -> ElectionState | None:
+    async def end(self, uow: UnitOfWork) -> ElectionState | None:
+        current = await self.get_state(uow)
         if current not in (ElectionState.STARTED, ElectionState.HALTED):
             return None
-        return ElectionState.ENDED
+        return await self._transition(uow, ElectionState.ENDED)
 
-    @staticmethod
-    def reset(current: ElectionState) -> ElectionState | None:
+    async def reset(self, uow: UnitOfWork) -> ElectionState | None:
+        current = await self.get_state(uow)
         if current != ElectionState.ENDED:
             return None
-        return ElectionState.INITIALIZED
+        return await self._transition(uow, ElectionState.INITIALIZED)

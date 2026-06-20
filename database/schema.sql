@@ -27,7 +27,7 @@ CREATE TABLE
 
 CREATE TABLE
     IF NOT EXISTS events (
-        sequence_no INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_id INTEGER PRIMARY KEY AUTOINCREMENT,
         event_type TEXT NOT NULL,
         payload TEXT NOT NULL,
         timestamp TEXT NOT NULL,

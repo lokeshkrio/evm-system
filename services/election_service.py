@@ -21,7 +21,7 @@ from models.enums import ElectionState
 from models.vote import Vote
 from repositories.event_repository import EventRepository
 from repositories.metadata_repository import MetadataRepository
-from services.state_machine import ElectionStateMachine
+from services.state_machine import PersistentElectionStateMachine
 from utils.hashing import GENESIS_EVENT_HASH, hash_database_event
 
 UnitOfWorkFactory = Callable[[], UnitOfWork]
@@ -30,10 +30,9 @@ UnitOfWorkFactory = Callable[[], UnitOfWork]
 class ElectionService:
     """Coordinates durable election use cases and post-commit events."""
 
-    def __init__(
         self,
         unit_of_work_factory: UnitOfWorkFactory,
-        state_machine: ElectionStateMachine,
+        state_machine: PersistentElectionStateMachine,
         event_bus: EventBus,
     ) -> None:
         self._new_unit_of_work = unit_of_work_factory
@@ -48,40 +47,32 @@ class ElectionService:
         async with self._mutation_lock:
             async with self._new_unit_of_work() as uow:
                 await self._verify_event_chain(uow.events)
-                persisted = await uow.metadata.get("election_state")
+                current = await self.state_machine.get_state(uow)
 
-                if persisted is None:
-                    await uow.metadata.set(
-                        "election_state",
-                        ElectionState.INITIALIZED.value,
+                if current == ElectionState.INITIALIZED:
+                    await uow.metadata.set("election_state", ElectionState.INITIALIZED.value)
+                elif current == ElectionState.VOTING:
+                    recovery_event = ElectionRecoveredEvent(
+                        {
+                            "from_state": ElectionState.VOTING.value,
+                            "to_state": ElectionState.STARTED.value,
+                            "reason": "server_restart",
+                        }
                     )
-                else:
-                    current = self._parse_state(persisted)
-                    if current == ElectionState.VOTING:
-                        recovery_event = ElectionRecoveredEvent(
-                            {
-                                "from_state": ElectionState.VOTING.value,
-                                "to_state": ElectionState.STARTED.value,
-                                "reason": "server_restart",
-                            }
-                        )
-                        await uow.metadata.set(
-                            "election_state",
-                            ElectionState.STARTED.value,
-                        )
-                        await self._append_db_event(uow.events, recovery_event)
+                    await self.state_machine._transition(uow, ElectionState.STARTED)
+                    await self._append_db_event(uow.events, recovery_event)
 
         if recovery_event is not None:
             await self.event_bus.publish(recovery_event)
 
     async def get_state(self) -> dict[str, str]:
         async with self._new_unit_of_work() as uow:
-            state = await self._load_state(uow.metadata)
+            state = await self.state_machine.get_state(uow)
         return {"state": state.value}
 
     async def get_status(self) -> dict[str, str | bool]:
         async with self._new_unit_of_work() as uow:
-            state = await self._load_state(uow.metadata)
+            state = await self.state_machine.get_state(uow)
         return {
             "state": state.value,
             "can_vote": state == ElectionState.VOTING,
@@ -91,13 +82,11 @@ class ElectionService:
         event: DomainEvent | None = None
         async with self._mutation_lock:
             async with self._new_unit_of_work() as uow:
-                current = await self._load_state(uow.metadata)
-                next_state = self.state_machine.start_election(current)
+                next_state = await self.state_machine.start_election(uow)
                 if next_state is None:
                     result = {"success": False, "reason": "Election already started"}
                 else:
                     event = ElectionStartedEvent({"state": next_state.value})
-                    await uow.metadata.set("election_state", next_state.value)
                     await self._append_db_event(uow.events, event)
                     result = {"success": True, "state": next_state.value}
 
@@ -109,13 +98,11 @@ class ElectionService:
         event: DomainEvent | None = None
         async with self._mutation_lock:
             async with self._new_unit_of_work() as uow:
-                current = await self._load_state(uow.metadata)
-                next_state = self.state_machine.enable_vote(current)
+                next_state = await self.state_machine.enable_vote(uow)
                 if next_state is None:
                     result = {"success": False, "reason": "Cannot enable voting"}
                 else:
                     event = VotingEnabledEvent({"state": next_state.value})
-                    await uow.metadata.set("election_state", next_state.value)
                     await self._append_db_event(uow.events, event)
                     result = {"success": True, "state": next_state.value}
 
@@ -127,13 +114,11 @@ class ElectionService:
         event: DomainEvent | None = None
         async with self._mutation_lock:
             async with self._new_unit_of_work() as uow:
-                current = await self._load_state(uow.metadata)
-                next_state = self.state_machine.halt(current)
+                next_state = await self.state_machine.halt(uow)
                 if next_state is None:
                     result = {"success": False, "reason": "Cannot halt election"}
                 else:
                     event = ElectionHaltedEvent({"state": next_state.value})
-                    await uow.metadata.set("election_state", next_state.value)
                     await self._append_db_event(uow.events, event)
                     result = {"success": True, "state": next_state.value}
 
@@ -145,13 +130,11 @@ class ElectionService:
         event: DomainEvent | None = None
         async with self._mutation_lock:
             async with self._new_unit_of_work() as uow:
-                current = await self._load_state(uow.metadata)
-                next_state = self.state_machine.resume(current)
+                next_state = await self.state_machine.resume(uow)
                 if next_state is None:
                     result = {"success": False, "reason": "Cannot resume election"}
                 else:
                     event = ElectionResumedEvent({"state": next_state.value})
-                    await uow.metadata.set("election_state", next_state.value)
                     await self._append_db_event(uow.events, event)
                     result = {"success": True, "state": next_state.value}
 
@@ -163,13 +146,11 @@ class ElectionService:
         event: DomainEvent | None = None
         async with self._mutation_lock:
             async with self._new_unit_of_work() as uow:
-                current = await self._load_state(uow.metadata)
-                next_state = self.state_machine.end(current)
+                next_state = await self.state_machine.end(uow)
                 if next_state is None:
                     result = {"success": False, "reason": "Cannot stop election"}
                 else:
                     event = ElectionStoppedEvent({"state": next_state.value})
-                    await uow.metadata.set("election_state", next_state.value)
                     await self._append_db_event(uow.events, event)
                     result = {"success": True, "state": next_state.value}
 
@@ -187,7 +168,7 @@ class ElectionService:
         async with self._mutation_lock:
             try:
                 async with self._new_unit_of_work() as uow:
-                    current = await self._load_state(uow.metadata)
+                    current = await self.state_machine.get_state(uow)
                     if current != ElectionState.VOTING:
                         result = {"success": False, "reason": "Voting disabled"}
                     elif not await uow.candidates.is_exists(candidate_id):
@@ -202,7 +183,7 @@ class ElectionService:
                         await self._append_db_event(uow.events, event)
                         result = {"success": False, "reason": "Duplicate vote"}
                     else:
-                        next_state = self.state_machine.vote_casted(current)
+                        next_state = await self.state_machine.vote_casted(uow)
                         if next_state is None:
                             raise RuntimeError("Voting state transition was rejected")
 
@@ -213,7 +194,6 @@ class ElectionService:
                             timestamp=event.timestamp,
                         )
                         await uow.votes.record_vote(vote)
-                        await uow.metadata.set("election_state", next_state.value)
                         await self._append_db_event(uow.events, event)
                         result = {"success": True}
             except sqlite3.IntegrityError as exc:
@@ -228,7 +208,7 @@ class ElectionService:
 
     async def get_results(self) -> dict[str, Any]:
         async with self._new_unit_of_work() as uow:
-            state = await self._load_state(uow.metadata)
+            state = await self.state_machine.get_state(uow)
             if state != ElectionState.ENDED:
                 return {
                     "success": False,
@@ -279,19 +259,3 @@ class ElectionService:
             if event["event_hash"] != computed_hash:
                 raise RuntimeError("Database event chain integrity check failed")
             previous_hash = computed_hash
-
-    async def _load_state(
-        self,
-        repository: MetadataRepository,
-    ) -> ElectionState:
-        persisted = await repository.get("election_state")
-        if persisted is None:
-            raise RuntimeError("Election state is not initialized")
-        return self._parse_state(persisted)
-
-    @staticmethod
-    def _parse_state(value: str) -> ElectionState:
-        try:
-            return ElectionState(value)
-        except ValueError as exc:
-            raise RuntimeError(f"Invalid persisted election state: {value!r}") from exc

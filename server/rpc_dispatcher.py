@@ -3,10 +3,13 @@
 from typing import Any, Awaitable, Callable
 
 import logging
+import time
 
 from pydantic import BaseModel, ValidationError
 
 import server.protocol as protocol
+from models.enums import Role
+from security.auth import authorize
 
 
 RPCMethod = Callable[..., Awaitable[Any]]
@@ -18,9 +21,11 @@ class RPCDispatcher:
     Registers and dispatches JSON-RPC methods.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, metrics_service: Any = None) -> None:
         self._methods: dict[str, RPCMethod] = {}
         self._params_models: dict[str, type[BaseModel]] = {}
+        self._method_roles: dict[str, Role | None] = {}
+        self.metrics_service = metrics_service
 
     @property
     def methods(self) -> tuple[str, ...]:
@@ -31,6 +36,7 @@ class RPCDispatcher:
         name: str,
         func: RPCMethod,
         params_model: type[BaseModel] | None = None,
+        required_role: Role | None = None,
     ) -> None:
 
         if name in self._methods:
@@ -39,13 +45,30 @@ class RPCDispatcher:
         self._methods[name] = func
         if params_model is not None:
             self._params_models[name] = params_model
+        self._method_roles[name] = required_role
 
     async def dispatch(
         self,
         request: protocol.RPCRequest,
     ) -> protocol.RPCResponse | protocol.RPCErrorResponse | None:
+        start_time = time.time()
+        success = False
+        try:
+            response = await self._dispatch_internal(request)
+            success = not isinstance(response, protocol.RPCErrorResponse)
+            return response
+        finally:
+            if self.metrics_service:
+                latency = (time.time() - start_time) * 1000
+                self.metrics_service.record_rpc_call(latency, success)
+
+    async def _dispatch_internal(
+        self,
+        request: protocol.RPCRequest,
+    ) -> protocol.RPCResponse | protocol.RPCErrorResponse | None:
 
         handler = self._methods.get(request.method)
+        required_role = self._method_roles.get(request.method)
 
         if handler is None:
 
@@ -57,6 +80,16 @@ class RPCDispatcher:
                 protocol.ErrorCode.METHOD_NOT_FOUND,
                 "Method not found",
             )
+
+        if required_role is not None:
+            if not authorize(request.api_key, required_role):
+                if request.id is None:
+                    return None
+                return protocol.error_response(
+                    request.id,
+                    protocol.ErrorCode.INVALID_REQUEST,
+                    "Unauthorized: Invalid or missing API key for required role",
+                )
 
         try:
 

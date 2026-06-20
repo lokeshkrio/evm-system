@@ -9,7 +9,7 @@ class EventRepository(BaseRepository):
             """
             SELECT event_hash
             FROM events
-            ORDER BY sequence_no DESC
+            ORDER BY event_id DESC
             LIMIT 1
             """
         )
@@ -42,14 +42,14 @@ class EventRepository(BaseRepository):
         cursor = await self.conn.execute(
             """
             SELECT
-                sequence_no,
+                event_id,
                 event_type,
                 payload,
                 timestamp,
                 previous_hash,
                 event_hash
             FROM events
-            ORDER BY sequence_no
+            ORDER BY event_id
             """
         )
         return [dict(row) for row in await cursor.fetchall()]
