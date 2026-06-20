@@ -20,6 +20,17 @@ from services.election_service import ElectionService
 from server.rpc_dispatcher import RPCDispatcher
 from server.connection_manager import ConnectionManager
 from server.websocket_server import WebSocketServer
+from server.protocol import (
+    CastVoteParams,
+    EnableVoteParams,
+    GetResultsParams,
+    GetStateParams,
+    GetStatusParams,
+    HaltElectionParams,
+    ResumeElectionParams,
+    StartElectionParams,
+    StopElectionParams,
+)
 
 
 logging.basicConfig(
@@ -81,6 +92,8 @@ async def main() -> None:
             event_repository=event_repository,
         )
 
+        await election_service.initialize()
+
         # --------------------------
         # RPC Dispatcher
         # --------------------------
@@ -90,36 +103,55 @@ async def main() -> None:
         dispatcher.register(
             "cast_vote",
             election_service.cast_vote,
+            CastVoteParams,
         )
 
         dispatcher.register(
             "start_election",
             election_service.start_election,
+            StartElectionParams,
+        )
+
+        dispatcher.register(
+            "enable_vote",
+            election_service.enable_vote,
+            EnableVoteParams,
         )
 
         dispatcher.register(
             "stop_election",
             election_service.stop_election,
+            StopElectionParams,
         )
 
         dispatcher.register(
             "halt_election",
             election_service.halt_election,
+            HaltElectionParams,
+        )
+
+        dispatcher.register(
+            "resume_election",
+            election_service.resume_election,
+            ResumeElectionParams,
         )
 
         dispatcher.register(
             "get_status",
             election_service.get_status,
+            GetStatusParams,
         )
 
         dispatcher.register(
             "get_state",
             election_service.get_state,
+            GetStateParams,
         )
 
         dispatcher.register(
             "get_results",
             election_service.get_results,
+            GetResultsParams,
         )
 
         # --------------------------

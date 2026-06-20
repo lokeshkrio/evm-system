@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from database.connection import DBConnection
+from database.migrations import run_migrations
 
 
 async def initialize_database(db: DBConnection) -> None:
@@ -13,3 +14,4 @@ async def initialize_database(db: DBConnection) -> None:
 
     await db.connection.executescript(schema)
     await db.connection.commit()
+    await run_migrations(db)

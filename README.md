@@ -13,8 +13,10 @@ An asynchronous, event-driven Electronic Voting Machine backend written in Pytho
 ## Election Lifecycle
 
 - Start election
+- Enable one voting session
 - Stop election
 - Halt election
+- Resume election
 - Query election status
 - State machine driven workflow
 
@@ -191,6 +193,12 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+For local development tooling:
+
+```bash
+pip install -e ".[dev]"
+```
+
 ## Initialize Database
 
 ```bash
@@ -208,6 +216,10 @@ python main.py
 # JSON-RPC Protocol
 
 The system communicates using JSON-RPC 2.0 over WebSockets.
+
+Supported methods are `start_election`, `enable_vote`, `cast_vote`,
+`halt_election`, `resume_election`, `stop_election`, `get_state`, `get_status`,
+and `get_results`. Vote totals are returned only after the election has ended.
 
 ## Example Request
 

@@ -29,8 +29,11 @@ class ElectionStateMachine:
     ENDED
     """
 
-    def __init__(self) -> None:
-        self._state = ElectionState.INITIALIZED
+    def __init__(
+        self,
+        initial_state: ElectionState = ElectionState.INITIALIZED,
+    ) -> None:
+        self._state = initial_state
 
     @property
     def state(self) -> ElectionState:
@@ -50,6 +53,17 @@ class ElectionStateMachine:
             datetime.now(UTC).isoformat(),
             old_state.value,
             new_state.value,
+        )
+
+    def restore(self, state: ElectionState) -> None:
+        """Restore a validated state after persistence recovery or rollback."""
+        old_state = self._state
+        self._state = state
+        logger.warning(
+            "[%s] Election state restored: %s -> %s",
+            datetime.now(UTC).isoformat(),
+            old_state.value,
+            state.value,
         )
 
     def start_election(self) -> bool:

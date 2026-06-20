@@ -1,15 +1,8 @@
-class DB:
-    """Placeholder DB connection class (unused/skeletal).
+"""Backward-compatible database connection import.
 
-    Attributes:
-        db_path: Path to the database file.
-    """
+New code should import :class:`DBConnection` from ``database.connection``.
+"""
 
-    def __init__(self, db_path: str) -> None:
-        """Initializes the database placeholder.
+from database.connection import DBConnection
 
-        Args:
-            db_path: Path to the SQLite database.
-        """
-        self.db_path = db_path
-        
+__all__ = ["DBConnection"]

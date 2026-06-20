@@ -14,6 +14,9 @@ class AuditEvent(Enum):
     ELECTION_STARTED = "ELECTION_STARTED"
     ELECTION_STOPPED = "ELECTION_STOPPED"
     ELECTION_HALTED = "ELECTION_HALTED"
+    ELECTION_RESUMED = "ELECTION_RESUMED"
+    VOTING_ENABLED = "VOTING_ENABLED"
+    ELECTION_RECOVERED = "ELECTION_RECOVERED"
 
     VOTE_CAST = "VOTE_CAST"
     DUPLICATE_VOTE = "DUPLICATE_VOTE"
@@ -131,13 +134,16 @@ class AuditService:
                 "hash": current_hash,
             }
 
-            with self.log_path.open("a", encoding="utf-8") as file:
-                file.write(json.dumps(entry) + "\n")
+            await asyncio.to_thread(self._append_entry, entry)
 
             self._last_hash = current_hash
             self._sequence_number = sequence_number
 
             return entry
+
+    def _append_entry(self, entry: dict[str, Any]) -> None:
+        with self.log_path.open("a", encoding="utf-8") as file:
+            file.write(json.dumps(entry) + "\n")
 
     def verify_chain(self) -> bool:
         """Verifies that the entire ledger sequence and hash integrity are unbroken.

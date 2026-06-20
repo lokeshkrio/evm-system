@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Any, Literal
 from enum import Enum
 import json
@@ -10,6 +10,8 @@ class Commands(str, Enum):
     START_ELECTION = "start_election"
     STOP_ELECTION = "stop_election"
     HALT_ELECTION = "halt_election"
+    ENABLE_VOTE = "enable_vote"
+    RESUME_ELECTION = "resume_election"
     GET_STATUS = "get_status"
     GET_STATE = "get_state"
     GET_RESULTS = "get_results"
@@ -25,53 +27,69 @@ class ErrorCode(int, Enum):
     INTERNAL_ERROR = -32603
 
 
-class CastVoteParams(BaseModel):
+class ParamsModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class CastVoteParams(ParamsModel):
     """Parameters required to cast a vote."""
-    voter_hash: str
-    candidate_id: int
+    voter_hash: str = Field(min_length=64, max_length=64, pattern=r"^[0-9a-fA-F]{64}$")
+    candidate_id: int = Field(gt=0)
 
 
-class StartElectionParams(BaseModel):
+class StartElectionParams(ParamsModel):
     """Parameters for starting an election (none required)."""
     pass
 
 
-class StopElectionParams(BaseModel):
+class StopElectionParams(ParamsModel):
     """Parameters for stopping an election (none required)."""
     pass
 
 
-class HaltElectionParams(BaseModel):
+class HaltElectionParams(ParamsModel):
     """Parameters for halting an election (none required)."""
     pass
 
 
-class GetStatusParams(BaseModel):
+class EnableVoteParams(ParamsModel):
+    """Parameters for enabling a single vote (none required)."""
+    pass
+
+
+class ResumeElectionParams(ParamsModel):
+    """Parameters for resuming a halted election (none required)."""
+    pass
+
+
+class GetStatusParams(ParamsModel):
     """Parameters for retrieving election status (none required)."""
     pass
 
 
-class GetStateParams(BaseModel):
+class GetStateParams(ParamsModel):
     """Parameters for retrieving election state (none required)."""
     pass
 
 
-class GetResultsParams(BaseModel):
+class GetResultsParams(ParamsModel):
     """Parameters for retrieving election results (none required)."""
     pass
 
 
-class GetAuditLogsParams(BaseModel):
+class GetAuditLogsParams(ParamsModel):
     """Parameters for retrieving audit logs (none required)."""
     pass
 
 
 class RPCRequest(BaseModel):
     """Base schema for general JSON-RPC requests."""
-    jsonrpc: str = "2.0"
-    method: str
-    params: dict[str, Any]
-    id: str | int
+    model_config = ConfigDict(extra="forbid")
+
+    jsonrpc: Literal["2.0"]
+    method: str = Field(min_length=1)
+    params: dict[str, Any] | list[Any] | None = None
+    id: str | int | None = None
 
 
 class CastVoteRequest(BaseModel):

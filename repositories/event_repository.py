@@ -4,7 +4,14 @@ from repositories.base_repository import BaseRepository
 class EventRepository(BaseRepository):
     """Repository handling database operations for the events table."""
 
-    async def append_event(self, event_type: str, payload: str, timestamp: str) -> None:
+    async def append_event(
+        self,
+        event_type: str,
+        payload: str,
+        timestamp: str,
+        *,
+        commit: bool = True,
+    ) -> None:
         """Appends a new event entry into the event log/history database.
 
         Args:
@@ -23,4 +30,5 @@ class EventRepository(BaseRepository):
             """,
             (event_type, payload, timestamp),
         )
-        await self.conn.commit()
+        if commit:
+            await self.conn.commit()

@@ -18,7 +18,7 @@ class CandidateRepository(BaseRepository):
             """
             SELECT 1
             FROM candidates
-            WHERE candidate_id = ?
+            WHERE candidate_id = ? AND active = 1
             """,
             (candidate_id,),
         )

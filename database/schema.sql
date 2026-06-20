@@ -3,14 +3,14 @@ CREATE TABLE
         candidate_id INTEGER PRIMARY KEY,
         name TEXT NOT NULL,
         party TEXT NOT NULL,
-        active INTEGER DEFAULT 1
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
     );
     
 CREATE TABLE
     IF NOT EXISTS voters (
         voter_id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
-        age INTEGER NOT NULL
+        age INTEGER NOT NULL CHECK (age >= 0)
     );
 
 CREATE TABLE
@@ -18,7 +18,8 @@ CREATE TABLE
         vote_id INTEGER PRIMARY KEY AUTOINCREMENT,
         voter_hash TEXT UNIQUE NOT NULL,
         candidate_id INTEGER NOT NULL,
-        timestamp TEXT NOT NULL
+        timestamp TEXT NOT NULL,
+        FOREIGN KEY (candidate_id) REFERENCES candidates(candidate_id) ON DELETE RESTRICT
     );
 
 CREATE TABLE
@@ -37,6 +38,6 @@ CREATE TABLE
         terminal_id TEXT PRIMARY KEY,
         name TEXT,
         secret_key TEXT,
-        active INTEGER DEFAULT 1
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1))
     );
 

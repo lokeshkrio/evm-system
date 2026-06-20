@@ -45,7 +45,7 @@ class VoteRepository(BaseRepository):
         row = await cursor.fetchone()
         return row is not None
 
-    async def record_vote(self, vote: Vote) -> None:
+    async def record_vote(self, vote: Vote, *, commit: bool = True) -> None:
         """Saves a cast vote to the database.
 
         Args:
@@ -62,7 +62,8 @@ class VoteRepository(BaseRepository):
             """,
             (vote.voter_hash, vote.candidate_id, vote.timestamp),
         )
-        await self.conn.commit()
+        if commit:
+            await self.conn.commit()
 
     async def get_results(self) -> dict[int, int]:
         """Calculates and returns the aggregated vote count per candidate.

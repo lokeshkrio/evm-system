@@ -18,6 +18,18 @@ class AdminClient(BaseClient):
         """Sends an RPC command to finalize and freeze the election state."""
         return await self.send_request("stop_election", {})
 
+    async def enable_vote(self) -> dict:
+        """Allows one terminal to submit a vote."""
+        return await self.send_request("enable_vote", {})
+
+    async def halt_election(self) -> dict:
+        """Halts an election while a voting session is active."""
+        return await self.send_request("halt_election", {})
+
+    async def resume_election(self) -> dict:
+        """Returns a halted election to its waiting state."""
+        return await self.send_request("resume_election", {})
+
     async def get_results(self) -> dict:
         """Fetches the aggregated vote tallies from the repository layer."""
         return await self.send_request("get_results", {})
