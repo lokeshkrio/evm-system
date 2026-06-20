@@ -27,38 +27,49 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 
+logger = logging.getLogger(__name__)
+
 
 async def main() -> None:
 
     db = DBConnection("data/evm.db")
-    websocket_server = None
+    websocket_server: WebSocketServer | None = None
+
+    shutdown_event = asyncio.Event()
 
     try:
-        # -----------------------------------
-        # Database
-        # -----------------------------------
 
-        logging.info("Connecting database...")
+        # --------------------------
+        # Database
+        # --------------------------
+
+        logger.info("Connecting database...")
 
         await db.connect()
 
+        logger.info("Initializing database...")
+
         await initialize_database(db)
+
+        logger.info("Seeding database...")
+
         await DataSeeder.seed(db)
 
-        # -----------------------------------
+        # --------------------------
         # Repositories
-        # -----------------------------------
+        # --------------------------
 
         vote_repository = VoteRepository(db)
         candidate_repository = CandidateRepository(db)
         metadata_repository = MetadataRepository(db)
         event_repository = EventRepository(db)
 
-        # -----------------------------------
+        # --------------------------
         # Services
-        # -----------------------------------
+        # --------------------------
 
         audit_service = AuditService()
+
         state_machine = ElectionStateMachine()
 
         election_service = ElectionService(
@@ -70,29 +81,56 @@ async def main() -> None:
             event_repository=event_repository,
         )
 
-        # -----------------------------------
+        # --------------------------
         # RPC Dispatcher
-        # -----------------------------------
+        # --------------------------
 
         dispatcher = RPCDispatcher()
 
-        dispatcher.register("cast_vote", election_service.cast_vote)
-        dispatcher.register("start_election", election_service.start_election)
-        dispatcher.register("stop_election", election_service.stop_election)
-        dispatcher.register("halt_election", election_service.halt_election)
-        dispatcher.register("get_status", election_service.get_status)
-        dispatcher.register("get_state", election_service.get_state)
-        dispatcher.register("get_results", election_service.get_results)
+        dispatcher.register(
+            "cast_vote",
+            election_service.cast_vote,
+        )
 
-        # -----------------------------------
+        dispatcher.register(
+            "start_election",
+            election_service.start_election,
+        )
+
+        dispatcher.register(
+            "stop_election",
+            election_service.stop_election,
+        )
+
+        dispatcher.register(
+            "halt_election",
+            election_service.halt_election,
+        )
+
+        dispatcher.register(
+            "get_status",
+            election_service.get_status,
+        )
+
+        dispatcher.register(
+            "get_state",
+            election_service.get_state,
+        )
+
+        dispatcher.register(
+            "get_results",
+            election_service.get_results,
+        )
+
+        # --------------------------
         # Connection Manager
-        # -----------------------------------
+        # --------------------------
 
         connection_manager = ConnectionManager()
 
-        # -----------------------------------
+        # --------------------------
         # WebSocket Server
-        # -----------------------------------
+        # --------------------------
 
         websocket_server = WebSocketServer(
             dispatcher=dispatcher,
@@ -101,42 +139,46 @@ async def main() -> None:
             port=8765,
         )
 
-        logging.info("Starting WebSocket server...")
+        logger.info("Starting WebSocket server...")
 
         await websocket_server.start()
 
-        logging.info("Server running on ws://localhost:8765")
+        logger.info("Server listening on ws://localhost:8765")
 
-        # Keep process alive forever
-        await asyncio.Future()
+        # Run forever
+        await shutdown_event.wait()
 
     except asyncio.CancelledError:
-        logging.info("Main task cancelled.")
+
+        logger.info("Main task cancelled.")
+
+    except Exception:
+
+        logger.exception("Fatal error during server execution.")
 
     finally:
 
-        logging.info("Beginning shutdown...")
+        logger.info("Beginning shutdown...")
 
-        # -----------------------------
-        # Stop websocket server
-        # -----------------------------
         if websocket_server is not None:
+
             with suppress(Exception):
+
                 await websocket_server.stop()
 
-        # -----------------------------
-        # Close database
-        # -----------------------------
         with suppress(Exception):
+
             await db.close()
 
-        logging.info("Shutdown complete.")
+        logger.info("Shutdown complete.")
 
 
 if __name__ == "__main__":
 
     try:
+
         asyncio.run(main())
 
     except KeyboardInterrupt:
-        logging.info("Server stopped by user.")
+
+        logger.info("Server stopped by user.")

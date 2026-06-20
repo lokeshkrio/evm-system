@@ -1,49 +1,47 @@
-from typing import Callable, Awaitable, Any
-import server.protocol as protocol
+# server/rpc_dispatcher.py
+
+from typing import Any, Awaitable, Callable
+
 from pydantic import ValidationError
 
-RPCMethod = Callable[[protocol.RPCRequest], Awaitable[dict[str, Any]]]
+import server.protocol as protocol
+
+
+RPCMethod = Callable[..., Awaitable[Any]]
 
 
 class RPCDispatcher:
-    """A dispatcher that registers and
-    routes JSON-RPC methods to their handlers.
-
-    It maps string method names to their corresponding asynchronous handlers,
-    validates the incoming request parameters, unpacks them appropriately,
-    and executes the handlers.
+    """
+    Registers and dispatches JSON-RPC methods.
     """
 
     def __init__(self) -> None:
-        """Initializes the RPCDispatcher with an empty registry of methods."""
-        self._method: dict[str, RPCMethod] = {}
+        self._methods: dict[str, RPCMethod] = {}
 
-    def register(self, name: str, func: RPCMethod) -> None:
-        """Registers a handler function under a specific method name.
+    @property
+    def methods(self) -> tuple[str, ...]:
+        return tuple(self._methods.keys())
 
-        Args:
-            name: The JSON-RPC method name (e.g., 'cast_vote').
-            func: The asynchronous callable that handles this method.
-        """
-        self._method[name] = func
+    def register(
+        self,
+        name: str,
+        func: RPCMethod,
+    ) -> None:
+
+        if name in self._methods:
+            raise ValueError(f"RPC method '{name}' already registered")
+
+        self._methods[name] = func
 
     async def dispatch(
-        self, request: protocol.RPCRequest
-    ) -> protocol.RPCErrorResponse | protocol.RPCResponse:
-        """Dispatches an RPC request to its registered handler.
+        self,
+        request: protocol.RPCRequest,
+    ) -> protocol.RPCResponse | protocol.RPCErrorResponse | None:
 
-        This method validates if the requested handler exists, formats the
-        parameters, executes the handler asynchronously, and returns either a
-        success or error RPC response.
+        handler = self._methods.get(request.method)
 
-        Args:
-            request: RPCRequest object containing the method, params, and ID.
-
-        Returns:
-            An RPCResponse on success or an RPCErrorResponse on failure.
-        """
-        handler = self._method.get(request.method)
         if handler is None:
+
             return protocol.error_response(
                 request.id,
                 protocol.ErrorCode.METHOD_NOT_FOUND,
@@ -51,41 +49,56 @@ class RPCDispatcher:
             )
 
         try:
-            params = (
-                request.params
-                if (isinstance(request.params, (dict, list)) or request.params is None)
-                else ()
-            )
-            if isinstance(params, dict):
+
+            params = request.params
+
+            if params is None:
+
+                result = await handler()
+
+            elif isinstance(params, dict):
+
                 result = await handler(**params)
-            else:
+
+            elif isinstance(params, list):
+
                 result = await handler(*params)
+
+            else:
+
+                return protocol.error_response(
+                    request.id,
+                    protocol.ErrorCode.INVALID_PARAMS,
+                    "Invalid params",
+                )
 
             # Notification
             if request.id is None:
                 return None
 
-            return protocol.RPCResponse(id=request.id, result=result)
-        except TypeError:
-
-            return protocol.RPCErrorResponse(
+            return protocol.RPCResponse(
                 id=request.id,
-                error=protocol.RPCError(
-                    code=protocol.ErrorCode.INVALID_PARAMS,
-                    message="Invalid params",
-                ),
+                result=result,
             )
 
         except ValidationError:
 
-            return protocol.RPCErrorResponse(
-                id=request.id,
-                error=protocol.RPCError(
-                    code=protocol.ErrorCode.INVALID_PARAMS,
-                    message="Validation failed",
-                ),
+            return protocol.error_response(
+                request.id,
+                protocol.ErrorCode.INVALID_PARAMS,
+                "Validation failed",
             )
+
+        except TypeError:
+
+            return protocol.error_response(
+                request.id,
+                protocol.ErrorCode.INVALID_PARAMS,
+                "Invalid params",
+            )
+
         except Exception as e:
+
             return protocol.error_response(
                 request.id,
                 protocol.ErrorCode.INTERNAL_ERROR,

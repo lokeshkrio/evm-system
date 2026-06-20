@@ -1,87 +1,140 @@
+# services/state_machine.py
+
 import logging
 from datetime import UTC, datetime
-from models import enums
+
+from models.enums import ElectionState
 
 logger = logging.getLogger(__name__)
 
 
 class ElectionStateMachine:
-    """A finite state machine managing allowed transitions in the election lifecycle.
+    """
+    Election lifecycle:
 
-    States transition in a controlled manner:
-    INITIALIZED -> STARTED -> VOTING -> ENDED/HALTED
+    INITIALIZED
+        ↓
+    STARTED
+        ↓
+    VOTING
+        ↓
+    STARTED
+        ↓
+    ...
+        ↓
+    HALTED
+        ↓
+    STARTED
+        ↓
+    ENDED
     """
 
     def __init__(self) -> None:
-        """Initializes the state machine to the INITIALIZED state."""
-        self._state = enums.ElectionState.INITIALIZED
+        self._state = ElectionState.INITIALIZED
 
     @property
-    def state(self) -> enums.ElectionState:
-        """Gets the current ElectionState enum value."""
+    def state(self) -> ElectionState:
         return self._state
 
-    @property
-    def vote_count(self) -> int:
-        """Placeholder for vote count (unimplemented)."""
-        return 0
+    def _transition(
+        self,
+        new_state: ElectionState,
+    ) -> None:
 
-    def advance_state(self) -> bool:
-        """Advances the election to the next logical state.
+        old_state = self._state
 
-        Returns:
-            True if the state was advanced successfully, False otherwise.
+        self._state = new_state
+
+        logger.info(
+            "[%s] Election state changed: %s -> %s",
+            datetime.now(UTC).isoformat(),
+            old_state.value,
+            new_state.value,
+        )
+
+    def start_election(self) -> bool:
         """
-        if self._state == enums.ElectionState.INITIALIZED:
-            self._state = enums.ElectionState.STARTED
-            logger.info(f"[{datetime.now(UTC)}] Election state advanced to: STARTED")
-        elif self._state == enums.ElectionState.STARTED:
-            self._state = enums.ElectionState.VOTING
-            logger.info(f"[{datetime.now(UTC)}] Election state advanced to: VOTING")
-        elif self._state == enums.ElectionState.VOTING:
-            self._state = enums.ElectionState.STARTED
-            logger.info(f"[{datetime.now(UTC)}] Election state advanced to: STARTED")
-        elif self._state == enums.ElectionState.HALTED:
-            self._state = enums.ElectionState.STARTED
-            logger.info(f"[{datetime.now(UTC)}] Election state advanced to: STARTED")
+        INITIALIZED -> STARTED
+        """
+
+        if self._state != ElectionState.INITIALIZED:
+            return False
+
+        self._transition(ElectionState.STARTED)
+
+        return True
+
+    def enable_vote(self) -> bool:
+        """
+        STARTED -> VOTING
+        """
+
+        if self._state != ElectionState.STARTED:
+            return False
+
+        self._transition(ElectionState.VOTING)
+
+        return True
+
+    def vote_casted(self) -> bool:
+        """
+        VOTING -> STARTED
+        """
+
+        if self._state != ElectionState.VOTING:
+            return False
+
+        self._transition(ElectionState.STARTED)
 
         return True
 
     def halt(self) -> bool:
-        """Halts the voting process if currently in the VOTING state.
-
-        Returns:
-            True if halted successfully, False otherwise.
         """
-        if self._state == enums.ElectionState.VOTING:
-            self._state = enums.ElectionState.HALTED
-            logger.warning(f"[{datetime.now(UTC)}] Election state advanced to: HALTED")
-            return True
-        else:
+        VOTING -> HALTED
+        """
+
+        if self._state != ElectionState.VOTING:
             return False
+
+        self._transition(ElectionState.HALTED)
+
+        return True
+
+    def resume(self) -> bool:
+        """
+        HALTED -> STARTED
+        """
+
+        if self._state != ElectionState.HALTED:
+            return False
+
+        self._transition(ElectionState.STARTED)
+
+        return True
 
     def end(self) -> bool:
-        """Ends the voting process if currently in the VOTING state.
-
-        Returns:
-            True if ended successfully, False otherwise.
         """
-        if self._state == enums.ElectionState.VOTING:
-            self._state = enums.ElectionState.ENDED
-            logger.info(f"[{datetime.now(UTC)}] Election state advanced to: ENDED")
-            return True
-        else:
+        STARTED/HALTED -> ENDED
+        """
+
+        if self._state not in (
+            ElectionState.STARTED,
+            ElectionState.HALTED,
+        ):
             return False
 
-    def restart(self) -> bool:
-        """Restarts the election process if it has already ended.
+        self._transition(ElectionState.ENDED)
 
-        Returns:
-            True if restarted successfully, False otherwise.
+        return True
+
+    def reset(self) -> bool:
         """
-        if self._state == enums.ElectionState.ENDED:
-            self._state = enums.ElectionState.STARTED
-            logger.warning(f"[{datetime.now(UTC)}] Election state advanced to: STARTED")
-            return True
-        else:
+        ENDED -> INITIALIZED
+        """
+
+        if self._state != ElectionState.ENDED:
             return False
+
+        self._transition(ElectionState.INITIALIZED)
+
+        return True

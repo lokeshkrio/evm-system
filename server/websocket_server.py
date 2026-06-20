@@ -1,11 +1,12 @@
-# server/websocket_server.py
-
-import asyncio
 import json
 import logging
 
 from pydantic import ValidationError
-from websockets.asyncio.server import ServerConnection, serve
+from websockets.asyncio.server import (
+    ServerConnection,
+    serve,
+    Server,
+)
 from websockets.exceptions import ConnectionClosed
 
 from server.protocol import (
@@ -36,6 +37,8 @@ class WebSocketServer:
         self.host = host
         self.port = port
 
+        self.server: Server | None = None
+
     async def handler(
         self,
         websocket: ServerConnection,
@@ -57,16 +60,12 @@ class WebSocketServer:
 
             async for raw_message in websocket:
 
-                if isinstance(
-                    raw_message,
-                    bytes,
-                ):
+                if isinstance(raw_message, bytes):
                     raw_message = raw_message.decode("utf-8")
 
                 response = await self._process_message(raw_message)
 
                 if response is not None:
-
                     await websocket.send(response)
 
         except ConnectionClosed:
@@ -91,7 +90,6 @@ class WebSocketServer:
 
         request_id = None
 
-        # Parse JSON
         try:
 
             data = json.loads(raw_message)
@@ -108,10 +106,7 @@ class WebSocketServer:
 
         try:
 
-            if isinstance(
-                data,
-                dict,
-            ):
+            if isinstance(data, dict):
                 request_id = data.get("id")
 
             request = RPCRequest.model_validate(data)
@@ -147,9 +142,13 @@ class WebSocketServer:
                 id=request_id,
             ).model_dump_json()
 
-    async def start(
-        self,
-    ) -> None:
+    async def start(self) -> None:
+
+        self.server = await serve(
+            self.handler,
+            self.host,
+            self.port,
+        )
 
         logger.info(
             "WebSocket server listening on ws://%s:%d",
@@ -157,10 +156,16 @@ class WebSocketServer:
             self.port,
         )
 
-        async with serve(
-            self.handler,
-            self.host,
-            self.port,
-        ):
+    async def stop(self) -> None:
 
-            await asyncio.Future()
+        logger.info("Closing client connections...")
+
+        await self.connection_manager.close_all()
+
+        logger.info("Stopping WebSocket server...")
+
+        if self.server is not None:
+            self.server.close()
+            await self.server.wait_closed()
+
+        logger.info("WebSocket server stopped.")

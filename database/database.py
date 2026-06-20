@@ -12,3 +12,4 @@ class DB:
             db_path: Path to the SQLite database.
         """
         self.db_path = db_path
+        

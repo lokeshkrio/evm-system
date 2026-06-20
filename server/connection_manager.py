@@ -48,3 +48,13 @@ class ConnectionManager:
                     "Client %s disconnected",
                     client_id,
                 )
+
+    async def close_all(self):
+
+        for connection in list(self._connections.values()):
+            try:
+                await connection.close(code=1001, reason="Server shutting down")
+            except Exception:
+                pass
+
+        self._connections.clear()
