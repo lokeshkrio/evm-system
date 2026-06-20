@@ -1,7 +1,8 @@
+import asyncio
 import json
 from pathlib import Path
 
-from pydantic import BaseModel, ValidationError, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from database.connection import DBConnection
 
@@ -37,10 +38,10 @@ class DataSeeder:
 
         assert db.connection is not None
 
-        if not candidate_data.exists():
+        if not await asyncio.to_thread(candidate_data.exists):
             raise FileNotFoundError(f"Candidate file not found: {candidate_data}")
 
-        if not voters_data.exists():
+        if not await asyncio.to_thread(voters_data.exists):
             raise FileNotFoundError(f"Voter file not found: {voters_data}")
 
         # Check whether data already exists
@@ -55,7 +56,10 @@ class DataSeeder:
             return
 
         # ---------- Candidates ----------
-        raw_candidates = json.loads(candidate_data.read_text(encoding="utf-8"))
+        raw_candidates_text = await asyncio.to_thread(
+            candidate_data.read_text, encoding="utf-8"
+        )
+        raw_candidates = json.loads(raw_candidates_text)
 
         candidates = []
 
@@ -78,7 +82,10 @@ class DataSeeder:
         )
 
         # ---------- Voters ----------
-        raw_voters = json.loads(voters_data.read_text(encoding="utf-8"))
+        raw_voters_text = await asyncio.to_thread(
+            voters_data.read_text, encoding="utf-8"
+        )
+        raw_voters = json.loads(raw_voters_text)
 
         voters = []
 
@@ -103,4 +110,3 @@ class DataSeeder:
         await db.connection.commit()
 
         print(f"Imported {len(candidates)} candidates and " f"{len(voters)} voters.")
-
