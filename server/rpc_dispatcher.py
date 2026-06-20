@@ -21,11 +21,12 @@ class RPCDispatcher:
     Registers and dispatches JSON-RPC methods.
     """
 
-    def __init__(self, metrics_service: Any = None) -> None:
+    def __init__(self, metrics_service: Any = None, db: Any = None) -> None:
         self._methods: dict[str, RPCMethod] = {}
         self._params_models: dict[str, type[BaseModel]] = {}
         self._method_roles: dict[str, Role | None] = {}
         self.metrics_service = metrics_service
+        self.db = db
 
     @property
     def methods(self) -> tuple[str, ...]:
@@ -82,7 +83,7 @@ class RPCDispatcher:
             )
 
         if required_role is not None:
-            if not authorize(request.api_key, required_role):
+            if not await authorize(request.api_key, required_role, self.db):
                 if request.id is None:
                     return None
                 return protocol.error_response(

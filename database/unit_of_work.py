@@ -5,6 +5,7 @@ from database.connection import DBConnection
 from repositories.candidate_repository import CandidateRepository
 from repositories.event_repository import EventRepository
 from repositories.metadata_repository import MetadataRepository
+from repositories.terminal_repository import TerminalRepository
 from repositories.vote_repository import VoteRepository
 
 
@@ -17,6 +18,7 @@ class UnitOfWork:
         self.candidates = CandidateRepository(db)
         self.metadata = MetadataRepository(db)
         self.events = EventRepository(db)
+        self.terminals = TerminalRepository(db)
         self._transaction: AbstractAsyncContextManager[None] | None = None
 
     async def __aenter__(self) -> "UnitOfWork":

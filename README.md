@@ -1,6 +1,6 @@
-# EVM-System-v2
+# EVM-System
 
-An asynchronous, event-driven Electronic Voting Machine backend written in Python. The system uses JSON-RPC over WebSockets, layered architecture, state machines, and append-only audit logs to simulate the backend components of a secure voting infrastructure.
+An asynchronous, event-driven Electronic Voting Machine backend written in Python. The system uses JSON-RPC over WebSockets, layered architecture, state machines, dynamic security, configuration management, and append-only audit logs to simulate the backend components of a secure voting infrastructure.
 
 > **Educational Project**
 >
@@ -168,8 +168,8 @@ SQLite Database
 ## Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/EVM-System-v2.git
-cd EVM-System-v2
+git clone https://github.com/yourusername/EVM-System.git
+cd EVM-System
 ```
 
 ## Create Virtual Environment
@@ -310,14 +310,10 @@ SQLite Database
 
 # Planned Improvements
 
-- HMAC request signatures
-- Rate limiting
-- Authentication
-- Role-based access control
-- Metrics and monitoring
 - Integration tests
 - Export functionality
-- Candidate import from JSON
+- Distributed nodes
+- Leader election
 
 ---
 

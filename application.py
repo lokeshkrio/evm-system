@@ -2,6 +2,7 @@ import asyncio
 import logging
 from types import SimpleNamespace
 
+from config import settings
 from database.connection import DBConnection
 from database.init_db import initialize_database
 from database.seed import DataSeeder
@@ -36,15 +37,10 @@ logger = logging.getLogger(__name__)
 class Application:
     """Composition root and lifecycle owner for the EVM backend."""
 
-    def __init__(
-        self,
-        db_path: str = "data/evm.db",
-        host: str = "localhost",
-        port: int = 8765,
-    ) -> None:
-        self.db = DBConnection(db_path)
-        self.host = host
-        self.port = port
+    def __init__(self) -> None:
+        self.db = DBConnection(settings.db_path)
+        self.host = settings.host
+        self.port = settings.port
         self.connection_manager = ConnectionManager()
         
         self.repositories = SimpleNamespace()
@@ -78,7 +74,7 @@ class Application:
         )
         await self.services.election.initialize()
 
-        self.dispatcher = self._build_dispatcher(self.services.election, self.services.metrics)
+        self.dispatcher = self._build_dispatcher(self.services.election, self.services.metrics, self.db)
         self.server = WebSocketServer(
             dispatcher=self.dispatcher,
             connection_manager=self.connection_manager,
@@ -101,8 +97,8 @@ class Application:
             await self.db.close()
 
     @staticmethod
-    def _build_dispatcher(service: ElectionService, metrics: MetricsService) -> RPCDispatcher:
-        dispatcher = RPCDispatcher(metrics_service=metrics)
+    def _build_dispatcher(service: ElectionService, metrics: MetricsService, db: DBConnection) -> RPCDispatcher:
+        dispatcher = RPCDispatcher(metrics_service=metrics, db=db)
         dispatcher.register("cast_vote", service.cast_vote, CastVoteParams, Role.TERMINAL)
         dispatcher.register("start_election", service.start_election, StartElectionParams, Role.ADMIN)
         dispatcher.register("enable_vote", service.enable_vote, EnableVoteParams, Role.ADMIN)
