@@ -1,0 +1,49 @@
+[{
+    "id":1,
+    "name":"Narendra Modi",
+    "party":"BJP"
+},{
+    "id":2,
+    "name":"Rahul Gandhi",
+    "party":"INC"
+},{
+    "id":3,
+    "name":"Arvind Kejriwal",
+    "party":"AAP"
+},
+{
+    "id":4,
+    "name":"Owaisi",
+    "party":"AIMIM"
+},
+{
+    "id":5,
+    "name":"Mamata Banerjee",
+    "party":"TMC"
+},
+{
+    "id":6,
+    "name":"Mulayam Singh Yadav",
+    "party":"SP"
+},
+{
+    "id":7,
+    "name":"Lalu Prasad Yadav",
+    "party":"RJD"
+},
+{
+    "id":8,
+    "name":"Nitish Kumar",
+    "party":"JDU"
+},
+{
+    "id":9,
+    "name":"M K Stalin",
+    "party":"DMK"
+},
+{
+    "id":10,
+    "name":"Sharad Pawar",
+    "party":"NCP"
+}
+]

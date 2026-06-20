@@ -1,0 +1,177 @@
+# ======================
+# Python
+# ======================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# SQLite
+*.sqlite
+*.sqlite3
+*.db
+
+# ======================
+# C++
+# ======================
+
+# Object files
+*.o
+*.obj
+*.lo
+*.slo
+
+# Static libraries
+*.a
+*.lib
+
+# Shared libraries
+*.so
+*.dylib
+*.dll
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Debug symbols
+*.pdb
+
+# ======================
+# CMake
+# ======================
+cmake-build-debug/
+cmake-build-release/
+cmake-build*/
+CMakeFiles/
+CMakeCache.txt
+compile_commands.json
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+
+# Build directories
+build/
+bin/
+
+# ======================
+# Visual Studio
+# ======================
+.vs/
+*.vcxproj.user
+*.suo
+
+# ======================
+# VSCode
+# ======================
+.vscode/
+
+# ======================
+# CLion / IntelliJ
+# ======================
+.idea/
+
+# ======================
+# macOS
+# ======================
+.DS_Store
+
+# ======================
+# Linux
+# ======================
+*~
+
+# ======================
+# Windows
+# ======================
+Thumbs.db
+Desktop.ini
+
+# ======================
+# Archives
+# ======================
+*.zip
+*.tar
+*.gz
+*.rar
+*.7z
+
+# ======================
+# Logs & Runtime
+# ======================
+*.pid
+*.seed
+*.stackdump
+
+# ======================
+# Coverage
+# ======================
+coverage/
+coverage.xml
+
+# ======================
+# Benchmarks
+# ======================
+benchmark_results/
+perf.data*
+
+# ======================
+# Generated Documentation
+# ======================
+docs/build/
+
+# ======================
+# Temporary files
+# ======================
+tmp/
+temp/
+.cache/
+
+# ======================
+# Data files (optional)
+# Uncomment if needed
+# ======================
+# data/
+# datasets/
+# *.csv
+
+# ======================
+# Secrets
+# ======================
+secret.key
+private.pem
+public.pem
+credentials.json
+config.local.*
